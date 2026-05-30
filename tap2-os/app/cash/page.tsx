@@ -42,6 +42,8 @@ function ConfidenceBadge({ confidence }: { confidence: BankTransaction["confiden
 
 export default function CashPage() {
   const runwayStatus = mockCashData.runway < 3 ? "danger" : mockCashData.runway < 6 ? "warning" : "ok";
+  const grossBurn = mockCashData.monthlyBurn;
+  const netBurn = grossBurn - 1401; // MRR offsets burn
 
   return (
     <div className="space-y-6">

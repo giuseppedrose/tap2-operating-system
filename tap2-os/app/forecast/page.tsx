@@ -5,20 +5,16 @@ import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { mockForecastData, type ForecastMonth } from "@/lib/mock-data/forecast";
+import { ARR } from "@/lib/mock-data/connected";
+import { MilestoneCard } from "@/components/shared/milestone-card";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  AreaChart, Area,
 } from "recharts";
 import { BarChart3, TrendingUp, Wallet, Users } from "lucide-react";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
-
-interface MonthWithScenario extends ForecastMonth {
-  id: number;
-  scenario: string;
-}
 
 const forecastColumns: Column<ForecastMonth & { id: number }>[] = [
   { header: "Month", accessor: "month" },
@@ -58,6 +54,11 @@ export default function ForecastPage() {
 
   const lastMonth = selectedScenario.months[selectedScenario.months.length - 1];
   const month12 = selectedScenario.months[11];
+
+  // Find month when ARR reaches 100k
+  const expectedScenario2 = mockForecastData.scenarios.find((s) => s.name === "Expected")!;
+  const month100k = expectedScenario2.months.find(m => m.expectedArr >= 100000);
+  const customersNeeded = Math.ceil(100000 / (12 * 89)); // €89/mo average
 
   return (
     <div className="space-y-6">

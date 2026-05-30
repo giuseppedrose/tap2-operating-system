@@ -4,10 +4,26 @@ import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { mockPartnersData, partnerSummary, type PartnerMetrics } from "@/lib/mock-data/partners";
+import { ACTIVE_CUSTOMERS } from "@/lib/mock-data/connected";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { Users, TrendingUp, DollarSign, Target } from "lucide-react";
+
+// Compute revenue impact per partner from CUSTOMERS
+const partnerRevMap: Record<string, number> = {};
+for (const c of ACTIVE_CUSTOMERS) {
+  partnerRevMap[c.partner] = (partnerRevMap[c.partner] ?? 0) + c.mrr;
+}
+
+// Partner scorecards mock scores for active partners
+const PARTNER_SCORECARDS = [
+  { name: 'Giuseppe', revenue: partnerRevMap['Giuseppe'] ?? 0, pipelineQuality: 88, activityScore: 92, conversionScore: 79 },
+  { name: 'Dorian',   revenue: partnerRevMap['Dorian'] ?? 0,   pipelineQuality: 74, activityScore: 81, conversionScore: 67 },
+  { name: 'Joaquin',  revenue: partnerRevMap['Joaquin'] ?? 0,  pipelineQuality: 71, activityScore: 76, conversionScore: 63 },
+  { name: 'Carlo',    revenue: partnerRevMap['Carlo'] ?? 0,    pipelineQuality: 69, activityScore: 72, conversionScore: 61 },
+  { name: 'Niels',    revenue: partnerRevMap['Niels'] ?? 0,    pipelineQuality: 58, activityScore: 65, conversionScore: 44 },
+];
 
 const BLUE = "#0358F1";
 
@@ -96,6 +112,49 @@ export default function PartnersPage() {
       <div>
         <h2 className="mb-3 text-base font-semibold text-gray-900">Partner Performance Detail</h2>
         <DataTable columns={partnerColumns} data={mockPartnersData} />
+      </div>
+
+      {/* Partner Scorecards */}
+      <div>
+        <h2 className="mb-4 text-base font-semibold text-gray-900">Partner Scorecards</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {PARTNER_SCORECARDS.map((p) => {
+            const scores = [
+              { label: 'Revenue', value: Math.min(100, Math.round((p.revenue / 400) * 100)), color: '#0358F1' },
+              { label: 'Pipeline', value: p.pipelineQuality, color: '#16a34a' },
+              { label: 'Activity', value: p.activityScore, color: '#f59e0b' },
+              { label: 'Conversion', value: p.conversionScore, color: '#7c3aed' },
+            ];
+            const overall = Math.round(scores.reduce((s, sc) => s + sc.value, 0) / scores.length);
+            return (
+              <div key={p.name} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0" style={{ background: '#0358F1' }}>
+                    {p.name[0]}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                    <p className="text-xs text-gray-400">Score: {overall}/100</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  {scores.map(sc => (
+                    <div key={sc.label}>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="text-gray-500">{sc.label}</span>
+                        <span className="font-medium text-gray-700">{sc.value}</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full">
+                        <div className="h-1.5 rounded-full" style={{ width: `${sc.value}%`, background: sc.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Revenue: €{p.revenue}/mo MRR</p>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

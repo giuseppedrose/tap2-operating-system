@@ -5,13 +5,12 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  TrendingUp,
+  DollarSign,
   GitBranch,
   Users,
-  Megaphone,
+  Target,
   Mail,
-  BarChart3,
-  Wallet,
+  RefreshCw,
   Cpu,
   Activity,
   CalendarCheck,

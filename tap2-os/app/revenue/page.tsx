@@ -4,10 +4,12 @@ import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { DataSourceBadge } from "@/components/shared/data-source-badge";
 import { mockRevenueData } from "@/lib/mock-data/revenue";
+import { CURRENT_MRR, ARR, ACTIVE_CLIENT_COUNT, ARPA, ACTIVE_CUSTOMERS } from "@/lib/mock-data/connected";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie, Legend,
+  BarChart, Bar, Cell, PieChart, Pie,
 } from "recharts";
 import { DollarSign, TrendingUp, Users, TrendingDown } from "lucide-react";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
@@ -15,7 +17,23 @@ import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
-interface Client {
+// Compute revenue by partner from CUSTOMERS data
+const partnerRevMap: Record<string, number> = {};
+for (const c of ACTIVE_CUSTOMERS) {
+  partnerRevMap[c.partner] = (partnerRevMap[c.partner] ?? 0) + c.mrr;
+}
+const revenueByPartner = Object.entries(partnerRevMap)
+  .map(([name, mrr]) => ({ name, mrr }))
+  .sort((a, b) => b.mrr - a.mrr);
+
+const RISK_BADGE: Record<string, string> = {
+  low:     'bg-green-100 text-green-700',
+  medium:  'bg-amber-100 text-amber-700',
+  high:    'bg-red-100 text-red-700',
+  churned: 'bg-gray-100 text-gray-500',
+};
+
+interface ClientRow {
   id: string;
   name: string;
   country: string;
@@ -24,17 +42,35 @@ interface Client {
   startDate: string;
   source: string;
   partnerOwner: string;
+  riskLevel?: string;
 }
 
-const clientColumns: Column<Client>[] = [
+const clientColumns: Column<ClientRow>[] = [
   { header: "Client", accessor: "name", cell: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
   { header: "Country", accessor: "country" },
   { header: "MRR", accessor: "mrr", cell: (r) => <span className="font-semibold">€{r.mrr}</span> },
   { header: "Status", accessor: "status", cell: (r) => <StatusBadge status={r.status} /> },
+  { header: "Risk", accessor: "riskLevel", cell: (r) => (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RISK_BADGE[r.riskLevel ?? 'low'] ?? ''}`}>
+      {r.riskLevel ?? 'low'}
+    </span>
+  )},
   { header: "Start Date", accessor: "startDate" },
   { header: "Source", accessor: "source" },
   { header: "Owner", accessor: "partnerOwner" },
 ];
+
+// Enrich revenue clients with riskLevel from CUSTOMERS
+const enrichedClients: ClientRow[] = mockRevenueData.clients.map(c => {
+  const riskMap: Record<string, string> = {
+    'De Groenhoek': 'low', 'Vega Kitchen Amsterdam': 'low', 'El Vergel Madrid': 'low',
+    'Roots & Co': 'low', 'Green Elephant': 'medium', 'La Floresta Barcelona': 'low',
+    'Plantiful Haarlem': 'low', 'Bio Bistro Utrecht': 'low', 'Madre Tierra Bogotá': 'medium',
+    'Naturverde Milan': 'low', 'The Sprout Rotterdam': 'low', 'Vegano Valencia': 'churned',
+    'Conscious Kitchen Den Haag': 'low', 'Pura Vida Medellín': 'medium', 'Qubico Demo Client': 'medium',
+  };
+  return { ...c, riskLevel: riskMap[c.name] ?? 'low' };
+});
 
 const COLORS = [BLUE, "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe"];
 
@@ -63,7 +99,7 @@ export default function RevenuePage() {
           { label: "+ New MRR", value: `+€${mockRevenueData.newMRR}`, color: "text-green-600" },
           { label: "+ Expansion MRR", value: `+€${mockRevenueData.expansionMRR}`, color: "text-blue-600" },
           { label: "- Churned MRR", value: `-€${mockRevenueData.churnedMRR}`, color: "text-red-500" },
-          { label: "= Net MRR", value: `€${mockRevenueData.currentMRR.toLocaleString()}`, color: "text-gray-900" },
+          { label: "= Net MRR", value: `€${CURRENT_MRR.toLocaleString()}`, color: "text-gray-900" },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-center">
             <p className="text-xs text-gray-500 mb-1">{item.label}</p>
@@ -117,6 +153,23 @@ export default function RevenuePage() {
         </ChartCard>
       </div>
 
+      {/* Revenue by Partner */}
+      <ChartCard title="Revenue by Partner Owner" description="MRR attributed to each partner (from CUSTOMERS data)">
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={revenueByPartner} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `€${v}`} />
+            <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v: unknown) => [`€${v}`, "MRR"]} />
+            <Bar dataKey="mrr" fill={BLUE} radius={[4, 4, 0, 0]}>
+              {revenueByPartner.map((_, i) => (
+                <Cell key={i} fill={`rgba(3,88,241,${1 - i * 0.1})`} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
       {/* Revenue by Segment */}
       <ChartCard title="Revenue by Segment" description="MRR broken down by customer segment">
         <ResponsiveContainer width="100%" height={200}>
@@ -132,8 +185,11 @@ export default function RevenuePage() {
 
       {/* Clients Table */}
       <div>
-        <h2 className="mb-3 text-base font-semibold text-gray-900">All Clients</h2>
-        <DataTable columns={clientColumns} data={mockRevenueData.clients} />
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-gray-900">All Clients</h2>
+          <DataSourceBadge status="mock" />
+        </div>
+        <DataTable columns={clientColumns} data={enrichedClients} />
       </div>
     </div>
   );

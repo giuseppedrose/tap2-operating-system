@@ -14,6 +14,21 @@ import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
+// Compute deal health
+function getDealHealth(closeDate: string, stage: string): { label: string; color: string } {
+  const today = new Date('2025-12-07');
+  const close = new Date(closeDate);
+  const daysToClose = Math.round((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (daysToClose <= 7 || stage === 'Negotiation') {
+    return { label: 'urgent', color: 'bg-red-100 text-red-700' };
+  }
+  if (daysToClose <= 30) {
+    return { label: 'stale', color: 'bg-amber-100 text-amber-700' };
+  }
+  return { label: 'healthy', color: 'bg-green-100 text-green-700' };
+}
+
 interface Deal {
   id: string;
   companyName: string;
@@ -31,6 +46,10 @@ const dealColumns: Column<Deal>[] = [
   { header: "Company", accessor: "companyName", cell: (r) => <span className="font-medium text-gray-900">{r.companyName}</span> },
   { header: "Deal", accessor: "dealName" },
   { header: "Stage", accessor: "stage", cell: (r) => <StatusBadge status={r.stage} /> },
+  { header: "Health", accessor: "stage", cell: (r) => {
+    const h = getDealHealth(r.closeDate, r.stage);
+    return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.color}`}>{h.label}</span>;
+  }},
   { header: "Value (ARR)", accessor: "value", cell: (r) => <span className="font-semibold">€{r.value.toLocaleString()}</span> },
   { header: "MRR", accessor: "expectedMrr", cell: (r) => <span>€{r.expectedMrr}</span> },
   { header: "Prob %", accessor: "probability", cell: (r) => (
@@ -62,7 +81,11 @@ export default function PipelinePage() {
   const activeDeals = mockPipelineData.deals.filter((d) => !["Closed Won", "Closed Lost"].includes(d.stage));
   const closedWon = mockPipelineData.deals.filter((d) => d.stage === "Closed Won").length;
   const closedLost = mockPipelineData.deals.filter((d) => d.stage === "Closed Lost").length;
-  const winRate = Math.round((closedWon / (closedWon + closedLost)) * 100);
+  const winRate = Math.round((closedWon / (closedWon + closedLost + 1)) * 100);
+
+  const avgDealSize = Math.round(
+    activeDeals.reduce((s, d) => s + d.value, 0) / (activeDeals.length || 1)
+  );
 
   return (
     <div className="space-y-6">
@@ -72,11 +95,20 @@ export default function PipelinePage() {
       />
       <DataStatusBadge status="seed" integration="HubSpot Pending" />
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         <KpiCard title="Total Pipeline" value={`€${mockPipelineData.totalPipeline.toLocaleString()}`} subvalue="gross value" icon={<GitBranch className="h-5 w-5" />} />
         <KpiCard title="Weighted Pipeline" value={`€${mockPipelineData.weightedPipeline.toLocaleString()}`} subvalue="prob-adjusted" icon={<DollarSign className="h-5 w-5" />} />
         <KpiCard title="Active Deals" value={activeDeals.length} subvalue="in pipeline" icon={<TrendingUp className="h-5 w-5" />} />
-        <KpiCard title="Win Rate" value={`${winRate}%`} subvalue={`${closedWon} won / ${closedLost} lost`} icon={<CheckCircle className="h-5 w-5" />} />
+        <KpiCard title="Win Rate" value="18%" subvalue="mock estimate" icon={<CheckCircle className="h-5 w-5" />} />
+        <KpiCard title="Avg Sales Cycle" value="34 days" subvalue="lead to close" icon={<Clock className="h-5 w-5" />} />
+      </div>
+
+      {/* Avg deal size note */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-600">Avg Deal Size (active deals)</span>
+          <span className="text-lg font-bold text-gray-900">€{avgDealSize.toLocaleString()}</span>
+        </div>
       </div>
 
       {/* Funnel */}

@@ -262,6 +262,24 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {/* CSV Upload Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>CSV Import</CardTitle>
+          <CardDescription>Upload bank transaction CSV files from Rabobank</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
+            <Upload className="h-8 w-8 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm font-medium text-gray-500">Drop Rabobank CSV here</p>
+            <p className="text-xs text-gray-400 mt-1">or click to browse — supports MT940 and CSV export formats</p>
+            <button className="mt-3 rounded-lg px-4 py-2 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+              Choose File
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Database Schema */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
