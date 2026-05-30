@@ -11,6 +11,7 @@ import {
   ScatterChart, Scatter, ZAxis,
 } from "recharts";
 import { Megaphone, Users, DollarSign, Target } from "lucide-react";
+import { InsightCard } from "@/components/shared/insight-card";
 
 const BLUE = "#0358F1";
 
@@ -100,6 +101,17 @@ export default function GtmPage() {
           ))}
         </div>
         <DataTable columns={channelColumns} data={filtered} />
+      </div>
+
+      {/* GTM Conclusions */}
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-gray-900">GTM Conclusions</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <InsightCard type="positive" title="Best by Pipeline: Horecava" description="Top pipeline-generating channel. €14,800 pipeline attributed. 3 clients won." />
+          <InsightCard type="positive" title="Best by MRR Closed: Cold Email" description="Highest MRR closed per lead. Carlo and Dorian driving results. €534 MRR closed." />
+          <InsightCard type="warning" title="Needs review: LinkedIn" description="9.6% reply rate but only 6 meetings booked. Booking process may be breaking conversion." />
+          <InsightCard type="action" title="Recommendation: Double down on Horecava + Cold Email" description="These two channels produce the best pipeline and MRR/lead. Increase investment in Q1 2026." />
+        </div>
       </div>
     </div>
   );

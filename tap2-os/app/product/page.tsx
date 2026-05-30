@@ -1,16 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { mockProductData } from "@/lib/mock-data/product";
-import { fetchProductMetrics, type DbProductMetric } from "@/lib/supabase/queries";
+import { ACTIVE_CUSTOMERS } from "@/lib/mock-data/connected";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, AreaChart, Area,
 } from "recharts";
 import { Cpu, Smartphone, CreditCard, Bell, QrCode, RefreshCw } from "lucide-react";
+
+// Mock scan counts per customer (top 5)
+const TOP_CLIENTS_BY_WALLET = [
+  { ...ACTIVE_CUSTOMERS[0], mockScans: 1240, mockWallets: 89 },
+  { ...ACTIVE_CUSTOMERS[6], mockScans: 980, mockWallets: 76 },
+  { ...ACTIVE_CUSTOMERS[7], mockScans: 870, mockWallets: 68 },
+  { ...ACTIVE_CUSTOMERS[1], mockScans: 760, mockWallets: 61 },
+  { ...ACTIVE_CUSTOMERS[3], mockScans: 640, mockWallets: 54 },
+];
+
+// Product health score
+const walletConversionScore = mockProductData.walletConversionRate / 45;
+const activationScore = mockProductData.activationRate / 70;
+const scansScore = mockProductData.scans / 10000;
+const HEALTH_SCORE = Math.round(((walletConversionScore + activationScore + scansScore) / 3) * 100);
+const HEALTH_LABEL = HEALTH_SCORE >= 70 ? 'Strong' : HEALTH_SCORE >= 40 ? 'Moderate' : 'Needs CS';
+const HEALTH_COLOR = HEALTH_SCORE >= 70 ? 'text-green-600' : HEALTH_SCORE >= 40 ? 'text-amber-600' : 'text-red-500';
 
 const BLUE = "#0358F1";
 
@@ -40,52 +56,54 @@ const scanColumns: Column<RestaurantScan>[] = [
 ];
 
 export default function ProductPage() {
-  const [liveMetrics, setLiveMetrics] = useState<DbProductMetric[] | null>(null);
-
-  useEffect(() => {
-    fetchProductMetrics().then(data => { if (data) setLiveMetrics(data) });
-  }, []);
-
-  const latestMetric = liveMetrics && liveMetrics.length > 0
-    ? liveMetrics[liveMetrics.length - 1]
-    : null;
-
-  const activeWallets = latestMetric ? Number(latestMetric.active_wallets) : mockProductData.activeWallets;
-  const walletInstalls = latestMetric ? Number(latestMetric.wallet_installs) : mockProductData.walletInstalls;
-  const activeCards = latestMetric ? Number(latestMetric.active_cards) : mockProductData.activeCards;
-  const notificationsSent = latestMetric ? Number(latestMetric.notifications_sent) : mockProductData.notificationsSent;
-  const scans = latestMetric ? Number(latestMetric.scans) : mockProductData.scans;
-  const redemptions = latestMetric ? Number(latestMetric.redemptions) : mockProductData.redemptions;
-
-  const trendsData = liveMetrics && liveMetrics.length > 0
-    ? liveMetrics.map(m => ({
-        month: m.date,
-        activeWallets: Number(m.active_wallets),
-        walletInstalls: Number(m.wallet_installs),
-        activeCards: Number(m.active_cards),
-        notificationsSent: Number(m.notifications_sent),
-        scans: Number(m.scans),
-        redemptions: Number(m.redemptions),
-      }))
-    : mockProductData.trends;
-
   const tableData = mockProductData.topRestaurantsByScans.map((r, i) => ({ ...r, id: i + 1 }));
 
   return (
     <div className="space-y-6">
+      {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard title="Active Wallets" value={activeWallets.toLocaleString()} trend={5.1} trendLabel="MoM" icon={<Smartphone className="h-5 w-5" />} />
-        <KpiCard title="Wallet Installs" value={walletInstalls.toLocaleString()} subvalue="total installed" icon={<Cpu className="h-5 w-5" />} />
-        <KpiCard title="Active Cards" value={activeCards.toLocaleString()} trend={3.2} trendLabel="MoM" icon={<CreditCard className="h-5 w-5" />} />
-        <KpiCard title="Notifications Sent" value={notificationsSent.toLocaleString()} subvalue="this month" icon={<Bell className="h-5 w-5" />} />
-        <KpiCard title="Scans" value={scans.toLocaleString()} trend={6.0} trendLabel="MoM" icon={<QrCode className="h-5 w-5" />} />
-        <KpiCard title="Redemptions" value={redemptions.toLocaleString()} trend={7.1} trendLabel="MoM" icon={<RefreshCw className="h-5 w-5" />} />
+        <KpiCard title="Active Wallets" value={mockProductData.activeWallets.toLocaleString()} trend={5.1} trendLabel="MoM" icon={<Smartphone className="h-5 w-5" />} />
+        <KpiCard title="Wallet Installs" value={mockProductData.walletInstalls.toLocaleString()} subvalue="total installed" icon={<Cpu className="h-5 w-5" />} />
+        <KpiCard title="Active Cards" value={mockProductData.activeCards.toLocaleString()} trend={3.2} trendLabel="MoM" icon={<CreditCard className="h-5 w-5" />} />
+        <KpiCard title="Notifications Sent" value={mockProductData.notificationsSent.toLocaleString()} subvalue="this month" icon={<Bell className="h-5 w-5" />} />
+        <KpiCard title="Scans" value={mockProductData.scans.toLocaleString()} trend={6.0} trendLabel="MoM" icon={<QrCode className="h-5 w-5" />} />
+        <KpiCard title="Redemptions" value={mockProductData.redemptions.toLocaleString()} trend={7.1} trendLabel="MoM" icon={<RefreshCw className="h-5 w-5" />} />
       </div>
 
+      {/* Product Health Score */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-6">
+        <div className="text-center flex-shrink-0">
+          <p className="text-xs font-medium text-gray-500 mb-1">Product Health Score</p>
+          <p className={`text-4xl font-bold ${HEALTH_COLOR}`}>{HEALTH_SCORE}</p>
+          <span className={`text-xs font-semibold rounded-full px-2 py-0.5 mt-1 inline-block ${HEALTH_SCORE >= 70 ? 'bg-green-100 text-green-700' : HEALTH_SCORE >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+            {HEALTH_LABEL}
+          </span>
+        </div>
+        <div className="flex-1 space-y-2">
+          {[
+            { label: 'Wallet Conversion', value: mockProductData.walletConversionRate, benchmark: 45, unit: '%' },
+            { label: 'Activation Rate', value: mockProductData.activationRate, benchmark: 70, unit: '%' },
+            { label: 'Monthly Scans', value: mockProductData.scans, benchmark: 10000, unit: '' },
+          ].map(m => (
+            <div key={m.label}>
+              <div className="flex justify-between text-xs mb-0.5">
+                <span className="text-gray-500">{m.label}</span>
+                <span className="text-gray-700 font-medium">{m.value}{m.unit} <span className="text-gray-400">/ {m.benchmark}{m.unit} benchmark</span></span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full relative">
+                <div className="h-1.5 rounded-full bg-blue-500" style={{ width: `${Math.min(100, (m.value / m.benchmark) * 100)}%` }} />
+                <div className="absolute top-0 bottom-0 w-0.5 bg-gray-400" style={{ left: '100%' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Conversion Funnel */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Wallet Conversion Rate", value: `${mockProductData.walletConversionRate}%`, desc: "Installs that are active", color: "text-blue-600" },
-          { label: "Activation Rate", value: `${mockProductData.activationRate}%`, desc: "Cards issued vs installs", color: "text-green-600" },
+          { label: "Wallet Conversion Rate", value: `${mockProductData.walletConversionRate}%`, desc: "Installs that are active (benchmark: 35-45%)", color: "text-blue-600" },
+          { label: "Activation Rate", value: `${mockProductData.activationRate}%`, desc: "Cards issued vs installs (benchmark: ~70%)", color: "text-green-600" },
           { label: "Win-Back Reactivation", value: `${mockProductData.winBackReactivation}%`, desc: "Churned wallets reactivated", color: "text-amber-600" },
         ].map((metric) => (
           <div key={metric.label} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-center">
@@ -96,10 +114,11 @@ export default function ProductPage() {
         ))}
       </div>
 
+      {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartCard title="Wallet & Card Growth" description="Monthly trend over last 12 months">
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={trendsData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <LineChart data={mockProductData.trends} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => v.split(" ")[0]} />
               <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
@@ -114,7 +133,7 @@ export default function ProductPage() {
 
         <ChartCard title="Scans & Redemptions" description="Monthly engagement metrics">
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={trendsData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <AreaChart data={mockProductData.trends} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={BLUE} stopOpacity={0.1} />
@@ -133,9 +152,10 @@ export default function ProductPage() {
         </ChartCard>
       </div>
 
+      {/* Notifications */}
       <ChartCard title="Notifications Sent" description="Monthly push notification volume">
         <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={trendsData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+          <BarChart data={mockProductData.trends} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => v.split(" ")[0]} />
             <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
@@ -145,9 +165,39 @@ export default function ProductPage() {
         </ResponsiveContainer>
       </ChartCard>
 
+      {/* Top restaurants */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-gray-900">Top Restaurants by Scans</h2>
         <DataTable columns={scanColumns} data={tableData} />
+      </div>
+
+      {/* Usage by client (from CUSTOMERS) */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">Top 5 Clients by Wallet Usage <span className="text-xs text-gray-400 font-normal">(mock)</span></h2>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+              <th className="px-6 py-3 text-left font-medium">Client</th>
+              <th className="px-6 py-3 text-left font-medium">Country</th>
+              <th className="px-6 py-3 text-left font-medium">Partner</th>
+              <th className="px-6 py-3 text-right font-medium">Mock Scans</th>
+              <th className="px-6 py-3 text-right font-medium">Mock Wallets</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TOP_CLIENTS_BY_WALLET.map((c, i) => (
+              <tr key={i} className="border-t border-gray-50">
+                <td className="px-6 py-3 font-medium text-gray-900">{c.name}</td>
+                <td className="px-6 py-3 text-gray-500">{c.country}</td>
+                <td className="px-6 py-3 text-gray-500">{c.partner}</td>
+                <td className="px-6 py-3 text-right font-semibold text-gray-900">{c.mockScans.toLocaleString()}</td>
+                <td className="px-6 py-3 text-right font-semibold text-blue-600">{c.mockWallets}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

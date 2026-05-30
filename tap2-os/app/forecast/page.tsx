@@ -5,18 +5,14 @@ import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { mockForecastData, type ForecastMonth } from "@/lib/mock-data/forecast";
+import { ARR } from "@/lib/mock-data/connected";
+import { MilestoneCard } from "@/components/shared/milestone-card";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  AreaChart, Area,
 } from "recharts";
 import { BarChart3, TrendingUp, Wallet, Users } from "lucide-react";
 
 const BLUE = "#0358F1";
-
-interface MonthWithScenario extends ForecastMonth {
-  id: number;
-  scenario: string;
-}
 
 const forecastColumns: Column<ForecastMonth & { id: number }>[] = [
   { header: "Month", accessor: "month" },
@@ -57,8 +53,32 @@ export default function ForecastPage() {
   const lastMonth = selectedScenario.months[selectedScenario.months.length - 1];
   const month12 = selectedScenario.months[11];
 
+  // Find month when ARR reaches 100k
+  const expectedScenario2 = mockForecastData.scenarios.find((s) => s.name === "Expected")!;
+  const month100k = expectedScenario2.months.find(m => m.expectedArr >= 100000);
+  const customersNeeded = Math.ceil(100000 / (12 * 89)); // €89/mo average
+
   return (
     <div className="space-y-6">
+      {/* Milestone Tracker */}
+      <div>
+        <h2 className="mb-4 text-base font-semibold text-gray-900">Milestone Tracker</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MilestoneCard label="Path to €100k ARR" current={ARR} target={100000} />
+          <MilestoneCard label="Path to €1M ARR" current={ARR} target={1000000} />
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-gray-700 mb-2">Estimated €100k ARR Month</p>
+            <p className="text-xl font-bold text-blue-600">{month100k ? month100k.month : 'Beyond 24mo'}</p>
+            <p className="text-xs text-gray-400 mt-1">Expected scenario</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-gray-700 mb-2">Customers Needed</p>
+            <p className="text-xl font-bold text-gray-900">{customersNeeded}</p>
+            <p className="text-xs text-gray-400 mt-1">at €89/mo avg for €100k ARR</p>
+          </div>
+        </div>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="Current MRR" value={`€${mockForecastData.currentMrr.toLocaleString()}`} subvalue="starting point" icon={<TrendingUp className="h-5 w-5" />} />
