@@ -1,0 +1,102 @@
+"use client";
+
+import { KpiCard } from "@/components/shared/kpi-card";
+import { ChartCard } from "@/components/shared/chart-card";
+import { DataTable, type Column } from "@/components/shared/data-table";
+import { mockPartnersData, partnerSummary, type PartnerMetrics } from "@/lib/mock-data/partners";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import { Users, TrendingUp, DollarSign, Target } from "lucide-react";
+
+const BLUE = "#0358F1";
+
+const partnerColumns: Column<PartnerMetrics>[] = [
+  { header: "Partner", accessor: "name", cell: (r) => (
+    <div className="flex items-center gap-2">
+      <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white flex-shrink-0" style={{ background: BLUE }}>
+        {r.name[0]}
+      </div>
+      <span className="font-medium text-gray-900">{r.name}</span>
+    </div>
+  )},
+  { header: "Leads", accessor: "leadsGenerated" },
+  { header: "Meetings", accessor: "meetingsBooked" },
+  { header: "Demos", accessor: "demosCompleted" },
+  { header: "Trials", accessor: "trialsStarted" },
+  { header: "Won", accessor: "closedWon", cell: (r) => <span className="font-semibold text-green-600">{r.closedWon}</span> },
+  { header: "Lost", accessor: "closedLost", cell: (r) => <span className="font-semibold text-red-500">{r.closedLost}</span> },
+  { header: "MRR Closed", accessor: "mrrClosed", cell: (r) => <span className="font-semibold">€{r.mrrClosed}</span> },
+  { header: "Lead→Meeting", accessor: "conversionLeadToMeeting", cell: (r) => <span>{r.conversionLeadToMeeting}%</span> },
+  { header: "Meeting→Close", accessor: "conversionMeetingToClose", cell: (r) => <span>{r.conversionMeetingToClose}%</span> },
+  { header: "Avg Deal", accessor: "averageDealSize", cell: (r) => <span>€{r.averageDealSize}</span> },
+];
+
+export default function PartnersPage() {
+  const topByMrr = [...mockPartnersData].sort((a, b) => b.mrrClosed - a.mrrClosed).slice(0, 5);
+  const conversionData = mockPartnersData.map((p) => ({
+    name: p.name,
+    "Lead→Meeting": p.conversionLeadToMeeting,
+    "Meeting→Close": p.conversionMeetingToClose,
+  }));
+
+  return (
+    <div className="space-y-6">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <KpiCard title="Total Leads" value={partnerSummary.totalLeads} subvalue="all partners" icon={<Target className="h-5 w-5" />} />
+        <KpiCard title="Total Meetings" value={partnerSummary.totalMeetings} subvalue="all partners" icon={<Users className="h-5 w-5" />} />
+        <KpiCard title="Closed Won" value={partnerSummary.totalClosedWon} subvalue="total deals" icon={<TrendingUp className="h-5 w-5" />} />
+        <KpiCard title="MRR Closed" value={`€${partnerSummary.totalMrrClosed}`} subvalue="all partners" icon={<DollarSign className="h-5 w-5" />} />
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ChartCard title="MRR Closed by Partner" description="Revenue generated per partner">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={topByMrr} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `€${v}`} />
+              <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v: unknown) => [`€${v}`, "MRR"]} />
+              <Bar dataKey="mrrClosed" fill={BLUE} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Conversion Rates by Partner" description="Lead-to-meeting and meeting-to-close rates">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={conversionData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+              <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v: unknown) => [`${v}%`]} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Lead→Meeting" fill={BLUE} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Meeting→Close" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Pipeline per Partner */}
+      <ChartCard title="Pipeline Generated by Partner" description="Total pipeline value attributed per partner">
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={mockPartnersData} layout="vertical" margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `€${v}`} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} width={90} />
+            <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v: unknown) => [`€${Number(v).toLocaleString()}`, "Pipeline"]} />
+            <Bar dataKey="pipelineGenerated" fill={BLUE} radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Table */}
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-gray-900">Partner Performance Detail</h2>
+        <DataTable columns={partnerColumns} data={mockPartnersData} />
+      </div>
+    </div>
+  );
+}
