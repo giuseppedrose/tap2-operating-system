@@ -1,13 +1,15 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { mockRevenueData } from "@/lib/mock-data/revenue";
+import { fetchCustomers, type DbCustomer } from "@/lib/supabase/queries";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie, Legend,
+  BarChart, Bar, Cell, PieChart, Pie,
 } from "recharts";
 import { DollarSign, TrendingUp, Users, TrendingDown } from "lucide-react";
 
@@ -37,13 +39,42 @@ const clientColumns: Column<Client>[] = [
 const COLORS = [BLUE, "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe"];
 
 export default function RevenuePage() {
+  const [liveCustomers, setLiveCustomers] = useState<DbCustomer[] | null>(null);
+
+  useEffect(() => {
+    fetchCustomers().then(data => { if (data) setLiveCustomers(data) });
+  }, []);
+
+  const clientsData: Client[] = liveCustomers
+    ? liveCustomers.map(c => ({
+        id: c.id,
+        name: c.name,
+        country: c.country ?? '',
+        mrr: Number(c.current_mrr),
+        status: c.status,
+        startDate: c.start_date ?? '',
+        source: c.source ?? '',
+        partnerOwner: c.partner_owner ?? '',
+      }))
+    : mockRevenueData.clients;
+
+  const activeClients = liveCustomers
+    ? liveCustomers.filter(c => c.status === 'active').length
+    : mockRevenueData.activeClients;
+
+  const totalMrr = liveCustomers
+    ? liveCustomers.filter(c => c.status === 'active').reduce((s, c) => s + Number(c.current_mrr), 0)
+    : mockRevenueData.currentMRR;
+
+  const arr = totalMrr * 12;
+
   return (
     <div className="space-y-6">
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard title="MRR" value={`€${mockRevenueData.currentMRR.toLocaleString()}`} trend={mockRevenueData.growth} trendLabel="MoM" icon={<DollarSign className="h-5 w-5" />} />
-        <KpiCard title="ARR" value={`€${mockRevenueData.arr.toLocaleString()}`} subvalue="projected" icon={<TrendingUp className="h-5 w-5" />} />
-        <KpiCard title="Active Clients" value={mockRevenueData.activeClients} trend={8.3} trendLabel="vs last month" icon={<Users className="h-5 w-5" />} />
+        <KpiCard title="MRR" value={`€${totalMrr.toLocaleString()}`} trend={mockRevenueData.growth} trendLabel="MoM" icon={<DollarSign className="h-5 w-5" />} />
+        <KpiCard title="ARR" value={`€${arr.toLocaleString()}`} subvalue="projected" icon={<TrendingUp className="h-5 w-5" />} />
+        <KpiCard title="Active Clients" value={activeClients} trend={8.3} trendLabel="vs last month" icon={<Users className="h-5 w-5" />} />
         <KpiCard title="Monthly Churn" value={`${mockRevenueData.churn}%`} trend={-0.3} trendLabel="vs last month" icon={<TrendingDown className="h-5 w-5" />} />
       </div>
 
@@ -54,7 +85,7 @@ export default function RevenuePage() {
           { label: "+ New MRR", value: `+€${mockRevenueData.newMRR}`, color: "text-green-600" },
           { label: "+ Expansion MRR", value: `+€${mockRevenueData.expansionMRR}`, color: "text-blue-600" },
           { label: "- Churned MRR", value: `-€${mockRevenueData.churnedMRR}`, color: "text-red-500" },
-          { label: "= Net MRR", value: `€${mockRevenueData.currentMRR.toLocaleString()}`, color: "text-gray-900" },
+          { label: "= Net MRR", value: `€${totalMrr.toLocaleString()}`, color: "text-gray-900" },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-center">
             <p className="text-xs text-gray-500 mb-1">{item.label}</p>
@@ -124,7 +155,7 @@ export default function RevenuePage() {
       {/* Clients Table */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-gray-900">All Clients</h2>
-        <DataTable columns={clientColumns} data={mockRevenueData.clients} />
+        <DataTable columns={clientColumns} data={clientsData} />
       </div>
     </div>
   );
