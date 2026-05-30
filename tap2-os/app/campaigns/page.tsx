@@ -1,10 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { mockCampaignsData, campaignSummary, type Campaign } from "@/lib/mock-data/campaigns";
+import { fetchCampaigns, type DbCampaign } from "@/lib/supabase/queries";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -34,14 +36,57 @@ const campaignColumns: Column<Campaign>[] = [
 ];
 
 export default function CampaignsPage() {
-  const metricsData = mockCampaignsData.map((c) => ({
+  const [liveCampaigns, setLiveCampaigns] = useState<DbCampaign[] | null>(null);
+
+  useEffect(() => {
+    fetchCampaigns().then(data => { if (data) setLiveCampaigns(data) });
+  }, []);
+
+  const campaignsData: Campaign[] = liveCampaigns
+    ? liveCampaigns.map(c => ({
+        id: c.id,
+        name: c.name,
+        market: c.market ?? '',
+        segment: c.segment ?? '',
+        owner: c.owner ?? '',
+        status: c.status as Campaign['status'],
+        emailsSent: Number(c.emails_sent),
+        openRate: Number(c.open_rate ?? 0),
+        replyRate: Number(c.reply_rate ?? 0),
+        positiveReplyRate: Number(c.positive_reply_rate ?? 0),
+        meetingsBooked: Number(c.meetings_booked),
+        demosCompleted: Number(c.demos_completed),
+        dealsCreated: Number(c.deals_created),
+        pipelineGenerated: Number(c.pipeline_generated ?? 0),
+        mrrClosed: Number(c.mrr_closed ?? 0),
+        createdAt: c.id,
+      }))
+    : mockCampaignsData;
+
+  const totalEmailsSent = liveCampaigns
+    ? liveCampaigns.reduce((s, c) => s + Number(c.emails_sent), 0)
+    : campaignSummary.totalEmailsSent;
+
+  const avgOpenRate = liveCampaigns && liveCampaigns.length > 0
+    ? parseFloat((liveCampaigns.reduce((s, c) => s + Number(c.open_rate ?? 0), 0) / liveCampaigns.length).toFixed(1))
+    : campaignSummary.avgOpenRate;
+
+  const totalMeetingsBooked = liveCampaigns
+    ? liveCampaigns.reduce((s, c) => s + Number(c.meetings_booked), 0)
+    : campaignSummary.totalMeetingsBooked;
+
+  const totalMrrClosed = liveCampaigns
+    ? liveCampaigns.reduce((s, c) => s + Number(c.mrr_closed ?? 0), 0)
+    : campaignSummary.totalMrrClosed;
+
+  const metricsData = campaignsData.map((c) => ({
     name: c.name.length > 20 ? c.name.slice(0, 20) + "…" : c.name,
     openRate: c.openRate,
     replyRate: c.replyRate,
     positiveReplyRate: c.positiveReplyRate,
   }));
 
-  const pipelineData = mockCampaignsData.map((c) => ({
+  const pipelineData = campaignsData.map((c) => ({
     name: c.name.length > 20 ? c.name.slice(0, 20) + "…" : c.name,
     pipeline: c.pipelineGenerated,
     mrr: c.mrrClosed,
@@ -49,15 +94,13 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-6">
-      {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard title="Emails Sent" value={campaignSummary.totalEmailsSent.toLocaleString()} icon={<Mail className="h-5 w-5" />} />
-        <KpiCard title="Avg Open Rate" value={`${campaignSummary.avgOpenRate}%`} subvalue="all campaigns" icon={<MousePointerClick className="h-5 w-5" />} />
-        <KpiCard title="Meetings Booked" value={campaignSummary.totalMeetingsBooked} icon={<Calendar className="h-5 w-5" />} />
-        <KpiCard title="MRR Closed" value={`€${campaignSummary.totalMrrClosed}`} icon={<DollarSign className="h-5 w-5" />} />
+        <KpiCard title="Emails Sent" value={totalEmailsSent.toLocaleString()} icon={<Mail className="h-5 w-5" />} />
+        <KpiCard title="Avg Open Rate" value={`${avgOpenRate}%`} subvalue="all campaigns" icon={<MousePointerClick className="h-5 w-5" />} />
+        <KpiCard title="Meetings Booked" value={totalMeetingsBooked} icon={<Calendar className="h-5 w-5" />} />
+        <KpiCard title="MRR Closed" value={`€${totalMrrClosed}`} icon={<DollarSign className="h-5 w-5" />} />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartCard title="Email Engagement by Campaign" description="Open, reply and positive reply rates">
           <ResponsiveContainer width="100%" height={260}>
@@ -87,10 +130,9 @@ export default function CampaignsPage() {
         </ChartCard>
       </div>
 
-      {/* Campaigns Table */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-gray-900">All Campaigns</h2>
-        <DataTable columns={campaignColumns} data={mockCampaignsData} />
+        <DataTable columns={campaignColumns} data={campaignsData} />
       </div>
     </div>
   );
