@@ -35,7 +35,7 @@ Answers the founder's morning questions:
 
 ```bash
 # The app lives in the tap2-os/ subfolder of this repository
-git clone https://github.com/giuseppedrose/VeganHouse tap2-operating-system
+git clone https://github.com/giuseppedrose/tap2-operating-system
 cd tap2-operating-system/tap2-os
 npm install
 ```
@@ -108,7 +108,7 @@ supabase db reset
 ### Required (for Supabase features)
 
 | Variable | Where to find it |
-|----------|-----------------|
+|----------|------------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Project Settings → API → anon/public |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Project Settings → API → service_role |
@@ -116,7 +116,7 @@ supabase db reset
 ### Phase 2 integrations (leave blank for now)
 
 | Variable | Service |
-|----------|---------|
+|----------|--------|
 | `STRIPE_SECRET_KEY` | Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Stripe |
 | `HUBSPOT_ACCESS_TOKEN` | HubSpot |
@@ -134,7 +134,7 @@ See `.env.local.example` for the full template.
 
 ### 1. Connect repository
 
-Go to [vercel.com/new](https://vercel.com/new), import the repository (`giuseppedrose/VeganHouse`), and set **Root Directory** to `tap2-os`.
+Go to [vercel.com/new](https://vercel.com/new), import the repository (`giuseppedrose/tap2-operating-system`), and set **Root Directory** to `tap2-os`.
 
 ### 2. Add environment variables
 
