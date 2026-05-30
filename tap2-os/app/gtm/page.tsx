@@ -13,6 +13,7 @@ import {
 import { Megaphone, Users, DollarSign, Target } from "lucide-react";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
+import { InsightCard } from "@/components/shared/insight-card";
 
 const BLUE = "#0358F1";
 

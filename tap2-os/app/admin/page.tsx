@@ -4,7 +4,7 @@ import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import {
   CreditCard, Users, Mail, Building, Calendar, BarChart3, Inbox, Database, Bot,
-  CheckCircle, Clock, AlertCircle, RefreshCw,
+  CheckCircle, Clock, AlertCircle, RefreshCw, Upload,
 } from "lucide-react";
 
 const BLUE = "#0358F1";
@@ -263,12 +263,12 @@ export default function AdminPage() {
       </div>
 
       {/* CSV Upload Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>CSV Import</CardTitle>
-          <CardDescription>Upload bank transaction CSV files from Rabobank</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-gray-900">CSV Import</p>
+          <p className="text-xs text-gray-400 mt-0.5">Upload bank transaction CSV files from Rabobank</p>
+        </div>
+        <div>
           <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
             <Upload className="h-8 w-8 text-gray-300 mx-auto mb-3" />
             <p className="text-sm font-medium text-gray-500">Drop Rabobank CSV here</p>
@@ -277,8 +277,8 @@ export default function AdminPage() {
               Choose File
             </button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Database Schema */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

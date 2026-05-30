@@ -24,7 +24,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { DollarSign, Users, GitBranch, Wallet, Cpu, TrendingUp } from "lucide-react";
+import { DollarSign, Users, GitBranch, Wallet, Cpu, TrendingUp, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";

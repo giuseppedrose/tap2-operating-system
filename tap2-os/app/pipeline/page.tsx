@@ -8,7 +8,7 @@ import { mockPipelineData } from "@/lib/mock-data/pipeline";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-import { GitBranch, DollarSign, TrendingUp, CheckCircle } from "lucide-react";
+import { GitBranch, DollarSign, TrendingUp, CheckCircle, Clock } from "lucide-react";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
