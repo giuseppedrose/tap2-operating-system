@@ -25,13 +25,13 @@ Answers the founder's morning questions:
 | Database | Supabase (PostgreSQL) |
 | Auth | Supabase Auth |
 | Hosting | Vercel |
-| AI Layer | Claude API (Anthropic) |
+| AI Layer | Claude API (Phase 3) |
 
 ---
 
-## Setup
+## Local Setup
 
-### 1. Clone & Install
+### 1. Clone & install dependencies
 
 ```bash
 git clone https://github.com/giuseppedrose/VeganHouse
@@ -39,15 +39,18 @@ cd VeganHouse/tap2-os
 npm install
 ```
 
-### 2. Environment Variables
+### 2. Configure environment variables
 
 ```bash
-cp .env.example .env.local
+cp .env.local.example .env.local
 ```
 
-Fill in the values. **Phase 1 runs fully on mock data — all vars are optional.**
+Open `.env.local` and fill in your Supabase credentials (see Supabase Setup below).
+All other variables are commented out and only needed in Phase 2.
 
-### 3. Run Locally
+> **Never commit `.env.local` to Git.** It is already in `.gitignore`.
+
+### 3. Run the development server
 
 ```bash
 npm run dev
@@ -55,106 +58,231 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### 4. Deploy to Vercel
+The app runs fully on **mock data** until you connect Supabase — all 11 dashboards work without any API keys.
+
+---
+
+## Supabase Setup
+
+### Option A — Use Supabase Cloud (recommended)
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Go to **Project Settings → API**
+3. Copy `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
+4. Copy `anon / public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+5. Copy `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
+6. Run the migration in the Supabase SQL editor:
 
 ```bash
-npx vercel --prod
+# Copy the contents of this file into the Supabase SQL editor:
+supabase/migrations/20250101000000_initial_schema.sql
 ```
 
-Set environment variables in Vercel → Settings → Environment Variables.
+7. Optionally seed reference data:
+
+```bash
+# Copy the contents of this file into the Supabase SQL editor:
+supabase/seed.sql
+```
+
+### Option B — Local Supabase (requires Docker)
+
+```bash
+# Install Supabase CLI
+npm install -g supabase
+
+# Start local Supabase
+supabase start
+
+# Apply migrations
+supabase db reset
+
+# Your local keys will be printed — add them to .env.local
+```
 
 ---
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role (server only) |
-| `STRIPE_SECRET_KEY` | Stripe secret key (sk_live_...) |
-| `HUBSPOT_ACCESS_TOKEN` | HubSpot private app token |
-| `INSTANTLY_API_KEY` | Instantly AI API key |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `FATHOM_API_KEY` | Fathom meeting notes API key |
-| `ANTHROPIC_API_KEY` | Claude API key for AI features |
+### Required (for Supabase features)
+
+| Variable | Where to find it |
+|----------|-----------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Project Settings → API → anon/public |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Project Settings → API → service_role |
+
+### Phase 2 integrations (leave blank for now)
+
+| Variable | Service |
+|----------|---------|
+| `STRIPE_SECRET_KEY` | Stripe |
+| `STRIPE_WEBHOOK_SECRET` | Stripe |
+| `HUBSPOT_ACCESS_TOKEN` | HubSpot |
+| `INSTANTLY_API_KEY` | Instantly AI |
+| `GOOGLE_CLIENT_ID` | Google Calendar |
+| `GOOGLE_CLIENT_SECRET` | Google Calendar |
+| `FATHOM_API_KEY` | Fathom |
+| `ANTHROPIC_API_KEY` | Claude API (Phase 3) |
+
+See `.env.local.example` for the full template.
+
+---
+
+## Deploy to Vercel
+
+### 1. Connect repository
+
+Go to [vercel.com/new](https://vercel.com/new), import `giuseppedrose/VeganHouse`, and set **Root Directory** to `tap2-os`.
+
+### 2. Add environment variables
+
+In Vercel → Project → Settings → Environment Variables, add:
+
+```
+NEXT_PUBLIC_SUPABASE_URL      = https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY = eyJ...
+SUPABASE_SERVICE_ROLE_KEY     = eyJ...
+```
+
+### 3. Deploy
+
+```bash
+# Or via CLI:
+npx vercel --prod
+```
+
+### Supabase CORS / allowed origins
+
+In Supabase Dashboard → Authentication → URL Configuration, add your Vercel URL to **Allowed Redirect URLs**:
+```
+https://your-app.vercel.app
+```
 
 ---
 
 ## Dashboards
 
-| Route | Dashboard |
-|-------|-----------|
-| `/` | Founder Dashboard — morning overview |
-| `/revenue` | Revenue — MRR, ARR, churn, clients |
-| `/pipeline` | Sales Pipeline — HubSpot-style kanban |
-| `/partners` | Partner Performance — leaderboard |
-| `/gtm` | GTM Channels — repeatable distribution |
-| `/campaigns` | Outbound Campaigns — Instantly AI |
-| `/forecast` | Forecast — 3-scenario model |
-| `/cash` | Cash & Burn — Rabobank data |
-| `/product` | Product Metrics — wallets, scans |
-| `/board` | Board Dashboard — investor view |
-| `/admin` | Data Sources & Admin |
+| Route | Dashboard | Description |
+|-------|-----------|-------------|
+| `/` | Founder Dashboard | Morning KPI overview + MRR chart + top opportunities |
+| `/revenue` | Revenue | MRR, ARR, churn rate, NRR, client table |
+| `/pipeline` | Sales Pipeline | Deal stages, pipeline value, deals by owner |
+| `/partners` | Partner Performance | Leaderboard with conversion rates |
+| `/gtm` | GTM Channels | Channel comparison to find repeatable distribution |
+| `/campaigns` | Outbound Campaigns | Instantly AI metrics, ROI per campaign |
+| `/forecast` | Forecast | 3-scenario 24-month model |
+| `/cash` | Cash & Burn | Bank balance, burn breakdown, runway |
+| `/product` | Product Metrics | Wallets, scans, redemptions vs benchmark |
+| `/board` | Board Dashboard | Investor-ready executive summary |
+| `/admin` | Data Sources | Integration status, CSV upload, env var checker |
 
 ---
 
 ## Database Schema
 
-Run `lib/supabase/schema.sql` against your Supabase project.
+13 tables — see `supabase/migrations/20250101000000_initial_schema.sql` for full DDL.
 
-Tables: `customers`, `subscriptions`, `deals`, `partners`, `gtm_sources`, `outbound_campaigns`, `campaign_leads`, `meetings`, `call_insights`, `bank_transactions`, `cash_snapshots`, `product_metrics`, `forecasts`
+| Table | Description |
+|-------|-------------|
+| `customers` | Active + historical clients |
+| `subscriptions` | Stripe subscription records |
+| `deals` | Pipeline deals (HubSpot sync in Phase 2) |
+| `partners` | Sales team & agency partners |
+| `gtm_sources` | GTM channel registry |
+| `outbound_campaigns` | Instantly AI campaign performance |
+| `campaign_leads` | Individual leads per campaign |
+| `meetings` | Calendar meetings + Fathom link |
+| `call_insights` | AI-extracted sales call insights |
+| `bank_transactions` | Rabobank / manual transactions |
+| `cash_snapshots` | Monthly cash position snapshots |
+| `product_metrics` | Wallet engagement metrics |
+| `forecasts` | Revenue & cash forecasts |
 
 ---
 
-## Integration Plan
+## Project Structure
 
-### Phase 1 (Current) — Mock Data
-All dashboards run on mock data from `lib/mock-data/`. Integration stubs in `lib/integrations/` have proper TypeScript interfaces.
+```
+tap2-os/
+├── app/                        # Next.js App Router pages
+│   ├── page.tsx                # Founder Dashboard
+│   ├── revenue/page.tsx
+│   ├── pipeline/page.tsx
+│   ├── partners/page.tsx
+│   ├── gtm/page.tsx
+│   ├── campaigns/page.tsx
+│   ├── forecast/page.tsx
+│   ├── cash/page.tsx
+│   ├── product/page.tsx
+│   ├── board/page.tsx
+│   └── admin/page.tsx
+├── components/
+│   ├── layout/                 # Sidebar, Header
+│   ├── shared/                 # KpiCard, ChartCard, DataTable, etc.
+│   └── ui/                     # Badge, Button, Card
+├── lib/
+│   ├── mock-data/              # Mock data for all dashboards
+│   ├── integrations/           # API integration stubs (Phase 2)
+│   │   ├── stripe/
+│   │   ├── hubspot/
+│   │   ├── instantly/
+│   │   ├── rabobank/
+│   │   ├── google-calendar/
+│   │   ├── fathom/
+│   │   └── gmail/
+│   ├── supabase/               # DB client + TypeScript types
+│   └── utils.ts
+├── supabase/
+│   ├── config.toml             # Local dev config
+│   ├── migrations/             # Schema migrations
+│   └── seed.sql                # Reference data + mock records
+├── .env.local.example          # Environment variable template
+└── .gitignore                  # .env.local and all secrets excluded
+```
 
-### Phase 2 — Real Data Sync
-- **Stripe**: MRR, subscriptions, webhook handler
-- **HubSpot**: Deals, contacts, pipeline sync
-- **Instantly AI**: Campaigns, leads, attribution
-- **Rabobank**: CSV upload + auto-categorization
-- **Google Calendar**: Meeting sync
-- **Fathom**: Call summaries + transcript pull
+---
 
-### Phase 3 — AI Layer (Claude API)
-- Weekly founder memo auto-generated
-- Objection extraction from Fathom transcripts
+## Integration Roadmap
+
+### Phase 1 (current) — Mock data
+All dashboards use `lib/mock-data/`. No external API credentials needed.
+
+### Phase 2 — Real data sync
+Connect one integration at a time by adding the env var and redeploying:
+
+1. **Supabase** — database layer (ready now)
+2. **Stripe** — live MRR, subscriptions, churn
+3. **HubSpot** — pipeline, deals, contacts
+4. **Instantly AI** — campaign stats + lead attribution
+5. **Rabobank** — CSV upload → auto-categorized transactions
+6. **Google Calendar** — meeting sync
+7. **Fathom** — call recordings + summaries
+
+### Phase 3 — AI layer (Claude API)
+- Weekly founder memo auto-generated from all data sources
+- Objection extraction from Fathom call transcripts
 - Deal scoring + next-best-action recommendations
-- Pipeline risk detection
+- Pipeline risk alerts
 
 ---
 
-## Attribution Logic (Instantly → HubSpot)
+## Security Notes
 
-1. Exact email match
-2. Domain match
-3. Company name fuzzy match (Levenshtein < 3)
-
-See `lib/integrations/instantly/normalize.ts`.
-
----
-
-## Partner Owners
-
-Giuseppe · Dorian · Joaquin · Jonathan · Carlo · Niels · Qubico Studio · Other
-
-## GTM Sources
-
-Horecava · HIP Spain · Cold Email · Cold Calling · LinkedIn · CitySales · OptiDist · Qubico Studio · Referral · Website · Marketing Agency · Colombia · Italy Outbound · Spain Outbound
+- `.env.local` is in `.gitignore` — **real keys never touch Git**
+- `.env.local.example` is safe to commit — contains only placeholder strings
+- Supabase service role key is server-only (not prefixed with `NEXT_PUBLIC_`)
+- Phase 2 API keys are commented out in `.env.local.example` until needed
+- Row Level Security (RLS) policies are included but commented out in the migration — enable before going multi-user
 
 ---
 
-## Forecast Scenarios
+## Partners & GTM Sources
 
-| Scenario | New Clients/Month |
-|----------|------------------|
-| Conservative | 3 |
-| Expected | 10 |
-| Aggressive | 25 |
+**Partners:** Giuseppe · Dorian · Joaquin · Jonathan · Carlo · Niels · Qubico Studio · Other
+
+**GTM Sources:** Horecava · HIP Spain · Cold Email · Cold Calling · LinkedIn · CitySales · OptiDist · Qubico Studio · Referral · Website · Marketing Agency · Colombia · Italy Outbound · Spain Outbound
+
+---
 
 **Current state: €1.4k MRR / €16.8k ARR · 32 active clients**
