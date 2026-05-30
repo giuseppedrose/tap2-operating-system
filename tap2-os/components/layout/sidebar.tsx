@@ -4,32 +4,36 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  TrendingUp,
+  DollarSign,
   GitBranch,
   Users,
-  Megaphone,
+  Target,
   Mail,
-  BarChart3,
-  Wallet,
+  RefreshCw,
   Cpu,
-  Presentation,
+  Calendar,
+  Wallet,
+  TrendingUp,
+  BarChart2,
   Settings,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Founder Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Revenue", href: "/revenue", icon: TrendingUp },
-  { label: "Sales Pipeline", href: "/pipeline", icon: GitBranch },
-  { label: "Partner Performance", href: "/partners", icon: Users },
-  { label: "GTM Channels", href: "/gtm", icon: Megaphone },
-  { label: "Outbound Campaigns", href: "/campaigns", icon: Mail },
-  { label: "Forecast", href: "/forecast", icon: BarChart3 },
-  { label: "Cash & Burn", href: "/cash", icon: Wallet },
-  { label: "Product Metrics", href: "/product", icon: Cpu },
-  { label: "Board Dashboard", href: "/board", icon: Presentation },
-  { label: "Data Sources", href: "/admin", icon: Settings },
+  { href: '/',           label: 'Command Center',        icon: LayoutDashboard },
+  { href: '/revenue',    label: 'Revenue Intelligence',  icon: DollarSign },
+  { href: '/pipeline',   label: 'Sales Pipeline',        icon: GitBranch },
+  { href: '/partners',   label: 'Partner Performance',   icon: Users },
+  { href: '/gtm',        label: 'GTM Engine',            icon: Target },
+  { href: '/campaigns',  label: 'Outbound Campaigns',    icon: Mail },
+  { href: '/lifecycle',  label: 'Customer Lifecycle',    icon: RefreshCw },
+  { href: '/product',    label: 'Product Usage',         icon: Cpu },
+  { href: '/meetings',   label: 'Meetings & Objections', icon: Calendar },
+  { href: '/cash',       label: 'Cash & Runway',         icon: Wallet },
+  { href: '/forecast',   label: 'Forecasting',           icon: TrendingUp },
+  { href: '/investor',   label: 'Investor View',         icon: BarChart2 },
+  { href: '/admin',      label: 'Data Sources',          icon: Settings },
 ];
 
 export function Sidebar() {

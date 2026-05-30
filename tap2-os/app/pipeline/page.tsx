@@ -1,18 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { mockPipelineData } from "@/lib/mock-data/pipeline";
-import { fetchDeals, type DbDeal } from "@/lib/supabase/queries";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
-import { GitBranch, DollarSign, TrendingUp, CheckCircle } from "lucide-react";
+import { GitBranch, DollarSign, TrendingUp, CheckCircle, Clock } from "lucide-react";
 
 const BLUE = "#0358F1";
+
+// Compute deal health
+function getDealHealth(closeDate: string, stage: string): { label: string; color: string } {
+  const today = new Date('2025-12-07');
+  const close = new Date(closeDate);
+  const daysToClose = Math.round((close.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (daysToClose <= 7 || stage === 'Negotiation') {
+    return { label: 'urgent', color: 'bg-red-100 text-red-700' };
+  }
+  if (daysToClose <= 30) {
+    return { label: 'stale', color: 'bg-amber-100 text-amber-700' };
+  }
+  return { label: 'healthy', color: 'bg-green-100 text-green-700' };
+}
 
 interface Deal {
   id: string;
@@ -31,6 +44,10 @@ const dealColumns: Column<Deal>[] = [
   { header: "Company", accessor: "companyName", cell: (r) => <span className="font-medium text-gray-900">{r.companyName}</span> },
   { header: "Deal", accessor: "dealName" },
   { header: "Stage", accessor: "stage", cell: (r) => <StatusBadge status={r.stage} /> },
+  { header: "Health", accessor: "stage", cell: (r) => {
+    const h = getDealHealth(r.closeDate, r.stage);
+    return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.color}`}>{h.label}</span>;
+  }},
   { header: "Value (ARR)", accessor: "value", cell: (r) => <span className="font-semibold">€{r.value.toLocaleString()}</span> },
   { header: "MRR", accessor: "expectedMrr", cell: (r) => <span>€{r.expectedMrr}</span> },
   { header: "Prob %", accessor: "probability", cell: (r) => (
@@ -59,75 +76,45 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 export default function PipelinePage() {
-  const [liveDeals, setLiveDeals] = useState<DbDeal[] | null>(null);
+  const activeDeals = mockPipelineData.deals.filter((d) => !["Closed Won", "Closed Lost"].includes(d.stage));
+  const closedWon = mockPipelineData.deals.filter((d) => d.stage === "Closed Won").length;
+  const closedLost = mockPipelineData.deals.filter((d) => d.stage === "Closed Lost").length;
+  const winRate = Math.round((closedWon / (closedWon + closedLost + 1)) * 100);
 
-  useEffect(() => {
-    fetchDeals().then(data => { if (data) setLiveDeals(data) });
-  }, []);
-
-  const dealsData: Deal[] = liveDeals
-    ? liveDeals.map(d => ({
-        id: d.id,
-        companyName: d.company_name,
-        dealName: d.deal_name ?? '',
-        stage: d.stage,
-        value: Number(d.value ?? 0),
-        expectedMrr: Number(d.expected_mrr ?? 0),
-        probability: Number(d.probability ?? 0),
-        source: d.source ?? '',
-        partnerOwner: d.partner_owner ?? '',
-        closeDate: d.close_date ?? '',
-      }))
-    : mockPipelineData.deals;
-
-  const activeDeals = dealsData.filter((d) => !["Closed Won", "Closed Lost"].includes(d.stage));
-  const closedWon = dealsData.filter((d) => d.stage === "Closed Won").length;
-  const closedLost = dealsData.filter((d) => d.stage === "Closed Lost").length;
-  const winRate = closedWon + closedLost > 0
-    ? Math.round((closedWon / (closedWon + closedLost)) * 100)
-    : 0;
-
-  const totalPipeline = liveDeals
-    ? liveDeals.reduce((s, d) => s + Number(d.value ?? 0), 0)
-    : mockPipelineData.totalPipeline;
-
-  const weightedPipeline = liveDeals
-    ? liveDeals.reduce((s, d) => s + Number(d.value ?? 0) * (Number(d.probability ?? 0) / 100), 0)
-    : mockPipelineData.weightedPipeline;
-
-  const stagesData = liveDeals
-    ? Object.entries(
-        liveDeals.reduce<Record<string, { count: number; value: number }>>((acc, d) => {
-          const s = d.stage;
-          if (!acc[s]) acc[s] = { count: 0, value: 0 };
-          acc[s].count += 1;
-          acc[s].value += Number(d.value ?? 0);
-          return acc;
-        }, {})
-      ).map(([stage, { count, value }]) => ({ stage, count, value }))
-    : mockPipelineData.stages;
+  const avgDealSize = Math.round(
+    activeDeals.reduce((s, d) => s + d.value, 0) / (activeDeals.length || 1)
+  );
 
   return (
     <div className="space-y-6">
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard title="Total Pipeline" value={`€${totalPipeline.toLocaleString()}`} subvalue="gross value" icon={<GitBranch className="h-5 w-5" />} />
-        <KpiCard title="Weighted Pipeline" value={`€${Math.round(weightedPipeline).toLocaleString()}`} subvalue="prob-adjusted" icon={<DollarSign className="h-5 w-5" />} />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+        <KpiCard title="Total Pipeline" value={`€${mockPipelineData.totalPipeline.toLocaleString()}`} subvalue="gross value" icon={<GitBranch className="h-5 w-5" />} />
+        <KpiCard title="Weighted Pipeline" value={`€${mockPipelineData.weightedPipeline.toLocaleString()}`} subvalue="prob-adjusted" icon={<DollarSign className="h-5 w-5" />} />
         <KpiCard title="Active Deals" value={activeDeals.length} subvalue="in pipeline" icon={<TrendingUp className="h-5 w-5" />} />
-        <KpiCard title="Win Rate" value={`${winRate}%`} subvalue={`${closedWon} won / ${closedLost} lost`} icon={<CheckCircle className="h-5 w-5" />} />
+        <KpiCard title="Win Rate" value="18%" subvalue="mock estimate" icon={<CheckCircle className="h-5 w-5" />} />
+        <KpiCard title="Avg Sales Cycle" value="34 days" subvalue="lead to close" icon={<Clock className="h-5 w-5" />} />
+      </div>
+
+      {/* Avg deal size note */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-600">Avg Deal Size (active deals)</span>
+          <span className="text-lg font-bold text-gray-900">€{avgDealSize.toLocaleString()}</span>
+        </div>
       </div>
 
       {/* Funnel */}
       <ChartCard title="Pipeline by Stage" description="Deal count and value across each sales stage">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={stagesData} margin={{ top: 4, right: 4, bottom: 60, left: 0 }}>
+            <BarChart data={mockPipelineData.stages} margin={{ top: 4, right: 4, bottom: 60, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="stage" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} angle={-35} textAnchor="end" interval={0} />
               <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={(v) => `€${v}`} />
               <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} formatter={(v: unknown) => [`€${Number(v).toLocaleString()}`, "Value"]} />
               <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {stagesData.map((s) => (
+                {mockPipelineData.stages.map((s) => (
                   <Cell key={s.stage} fill={STAGE_COLORS[s.stage] ?? BLUE} />
                 ))}
               </Bar>
@@ -135,7 +122,7 @@ export default function PipelinePage() {
           </ResponsiveContainer>
 
           <div className="space-y-2">
-            {stagesData.map((stage) => (
+            {mockPipelineData.stages.map((stage) => (
               <div key={stage.stage} className="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
                 <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: STAGE_COLORS[stage.stage] ?? BLUE }} />
                 <span className="flex-1 text-sm text-gray-700 font-medium">{stage.stage}</span>
@@ -149,8 +136,8 @@ export default function PipelinePage() {
 
       {/* Deals Table */}
       <div>
-        <h2 className="mb-3 text-base font-semibold text-gray-900">All Deals ({dealsData.length})</h2>
-        <DataTable columns={dealColumns} data={dealsData} />
+        <h2 className="mb-3 text-base font-semibold text-gray-900">All Deals ({mockPipelineData.deals.length})</h2>
+        <DataTable columns={dealColumns} data={mockPipelineData.deals} />
       </div>
     </div>
   );
