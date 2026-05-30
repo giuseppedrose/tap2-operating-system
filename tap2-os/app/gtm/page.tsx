@@ -11,6 +11,8 @@ import {
   ScatterChart, Scatter, ZAxis,
 } from "recharts";
 import { Megaphone, Users, DollarSign, Target } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -45,6 +47,11 @@ export default function GtmPage() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="The GTM dashboard is structured to identify repeatable channels once live source data is connected. Currently all channel metrics are seed data. The dashboard will compare cold email, cold calling, LinkedIn, events, and referrals side-by-side once Instantly and HubSpot are connected."
+        nextStep="Connect HubSpot to attribute deals to GTM channels with real source data."
+      />
+      <DataStatusBadge status="seed" integration="HubSpot + Instantly Pending" />
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="Total Leads" value={gtmSummary.totalLeads} icon={<Target className="h-5 w-5" />} />

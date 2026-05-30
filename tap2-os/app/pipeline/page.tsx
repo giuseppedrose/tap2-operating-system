@@ -9,6 +9,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import { GitBranch, DollarSign, TrendingUp, CheckCircle } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -64,6 +66,11 @@ export default function PipelinePage() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="HubSpot connection is required to validate pipeline quality and make deal stage data live. All pipeline deals shown are structured seed data."
+        nextStep="Configure HUBSPOT_ACCESS_TOKEN to activate live deal tracking."
+      />
+      <DataStatusBadge status="seed" integration="HubSpot Pending" />
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="Total Pipeline" value={`€${mockPipelineData.totalPipeline.toLocaleString()}`} subvalue="gross value" icon={<GitBranch className="h-5 w-5" />} />

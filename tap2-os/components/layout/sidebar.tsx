@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -12,24 +13,27 @@ import {
   BarChart3,
   Wallet,
   Cpu,
-  Presentation,
+  Activity,
+  CalendarCheck,
   Settings,
-  Zap,
+  LineChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Founder Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Revenue", href: "/revenue", icon: TrendingUp },
-  { label: "Sales Pipeline", href: "/pipeline", icon: GitBranch },
-  { label: "Partner Performance", href: "/partners", icon: Users },
+  { label: "Pipeline", href: "/pipeline", icon: GitBranch },
+  { label: "Partners", href: "/partners", icon: Users },
   { label: "GTM Channels", href: "/gtm", icon: Megaphone },
-  { label: "Outbound Campaigns", href: "/campaigns", icon: Mail },
+  { label: "Campaigns", href: "/campaigns", icon: Mail },
+  { label: "Lifecycle", href: "/lifecycle", icon: Activity },
+  { label: "Meetings", href: "/meetings", icon: CalendarCheck },
+  { label: "Cash & Runway", href: "/cash", icon: Wallet },
+  { label: "Product", href: "/product", icon: Cpu },
   { label: "Forecast", href: "/forecast", icon: BarChart3 },
-  { label: "Cash & Burn", href: "/cash", icon: Wallet },
-  { label: "Product Metrics", href: "/product", icon: Cpu },
-  { label: "Board Dashboard", href: "/board", icon: Presentation },
-  { label: "Data Sources", href: "/admin", icon: Settings },
+  { label: "Investor View", href: "/investor", icon: LineChart },
+  { label: "Integration Hub", href: "/admin", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -39,12 +43,13 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col" style={{ background: "var(--sidebar-bg)" }}>
       {/* Logo */}
       <div className="flex h-16 items-center gap-2.5 px-5 border-b border-white/10">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg font-bold text-white text-sm"
-          style={{ background: "#0358F1" }}
-        >
-          <Zap className="h-4 w-4" />
-        </div>
+        <Image
+          src="/brand/symbol-white.png"
+          alt="Tap2"
+          width={28}
+          height={28}
+          className="flex-shrink-0"
+        />
         <div>
           <span className="text-sm font-bold text-white tracking-tight">Tap2</span>
           <span className="ml-1 text-xs font-medium" style={{ color: "var(--sidebar-muted)" }}>OS</span>

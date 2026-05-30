@@ -10,6 +10,8 @@ import {
   BarChart, Bar, Cell, PieChart, Pie, Legend,
 } from "recharts";
 import { DollarSign, TrendingUp, Users, TrendingDown } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -39,6 +41,13 @@ const COLORS = [BLUE, "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe"];
 export default function RevenuePage() {
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="Stripe connection is the next step to make MRR and ARR live. All revenue data shown is structured seed data based on ~€1.4k MRR and 30+ active HoReCa and local business clients."
+        nextStep="Configure STRIPE_SECRET_KEY in Vercel to activate live revenue tracking."
+      />
+      <div className="flex items-center gap-2">
+        <DataStatusBadge status="seed" integration="Stripe Pending" tooltip="Revenue data is structured seed data. Connect Stripe to replace with live MRR, invoices, and churn." />
+      </div>
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="MRR" value={`€${mockRevenueData.currentMRR.toLocaleString()}`} trend={mockRevenueData.growth} trendLabel="MoM" icon={<DollarSign className="h-5 w-5" />} />

@@ -9,6 +9,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { Mail, MousePointerClick, Calendar, DollarSign } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -49,6 +51,11 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="Instantly connection will allow outbound performance to be attributed to meetings, deals, and MRR. All campaign data is structured seed data until INSTANTLY_API_KEY is configured."
+        nextStep="Configure INSTANTLY_API_KEY to pull live campaign metrics."
+      />
+      <DataStatusBadge status="seed" integration="Instantly Pending" />
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="Emails Sent" value={campaignSummary.totalEmailsSent.toLocaleString()} icon={<Mail className="h-5 w-5" />} />

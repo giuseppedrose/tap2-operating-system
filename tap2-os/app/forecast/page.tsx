@@ -10,6 +10,8 @@ import {
   AreaChart, Area,
 } from "recharts";
 import { BarChart3, TrendingUp, Wallet, Users } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -59,6 +61,11 @@ export default function ForecastPage() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="Forecasts are assumption-driven until Stripe revenue and HubSpot pipeline data are connected. Once Stripe is live, the starting MRR will be replaced with real data and scenario projections will become more accurate."
+        nextStep="Connect Stripe to replace the €1.4k MRR starting point with a live figure."
+      />
+      <DataStatusBadge status="seed" integration="Stripe + HubSpot Pending" />
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard title="Current MRR" value={`€${mockForecastData.currentMrr.toLocaleString()}`} subvalue="starting point" icon={<TrendingUp className="h-5 w-5" />} />

@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+import { DataStatusBadge, type DataStatus } from "@/components/shared/data-status-badge";
 
 const pageTitles: Record<string, string> = {
   "/": "Founder Dashboard",
@@ -14,10 +15,28 @@ const pageTitles: Record<string, string> = {
   "/gtm": "GTM Channels",
   "/campaigns": "Outbound Campaigns",
   "/forecast": "Forecast",
-  "/cash": "Cash & Burn",
+  "/cash": "Cash & Runway",
   "/product": "Product Metrics",
+  "/lifecycle": "Customer Lifecycle",
+  "/meetings": "Meetings & Objections",
   "/board": "Board Dashboard",
-  "/admin": "Data Sources",
+  "/admin": "Integration Hub",
+};
+
+const pageDataStatus: Record<string, { status: DataStatus; integration?: string }> = {
+  "/": { status: "seed", integration: "All Integrations Pending" },
+  "/revenue": { status: "seed", integration: "Stripe Pending" },
+  "/pipeline": { status: "seed", integration: "HubSpot Pending" },
+  "/partners": { status: "seed" },
+  "/gtm": { status: "seed", integration: "All Sources Pending" },
+  "/campaigns": { status: "seed", integration: "Instantly Pending" },
+  "/forecast": { status: "seed", integration: "Stripe + HubSpot Pending" },
+  "/cash": { status: "manual", integration: "Rabobank CSV Pending" },
+  "/product": { status: "seed", integration: "Product Sync Pending" },
+  "/lifecycle": { status: "seed", integration: "HubSpot Pending" },
+  "/meetings": { status: "seed", integration: "Calendar + Fathom Pending" },
+  "/board": { status: "seed" },
+  "/admin": { status: "connected", integration: "Supabase" },
 };
 
 export function Header() {
@@ -26,6 +45,7 @@ export function Header() {
 
   const title = pageTitles[pathname] ?? "Tap2 OS";
   const today = format(new Date(), "MMMM d, yyyy");
+  const dataStatus = pageDataStatus[pathname];
 
   function handleRefresh() {
     setRefreshing(true);
@@ -39,10 +59,14 @@ export function Header() {
         <p className="text-xs text-gray-400">{today}</p>
       </div>
       <div className="flex items-center gap-3">
-        <span className="hidden sm:flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 border border-green-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-          Live data
-        </span>
+        {dataStatus && (
+          <span className="hidden sm:flex">
+            <DataStatusBadge
+              status={dataStatus.status}
+              integration={dataStatus.integration}
+            />
+          </span>
+        )}
         <Button
           variant="outline"
           size="sm"

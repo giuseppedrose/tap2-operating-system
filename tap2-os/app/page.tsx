@@ -22,6 +22,8 @@ import {
 } from "recharts";
 import { DollarSign, Users, GitBranch, Wallet, Cpu, TrendingUp } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -50,6 +52,10 @@ export default function FounderDashboard() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="The operating system is ready. Live integrations will turn seed data into real-time intelligence. All KPIs below are structured seed data — connect Stripe, HubSpot, Rabobank, and the other integrations to activate live tracking."
+        nextStep="Connect Stripe to make MRR live, then HubSpot for pipeline."
+      />
       {/* KPI Row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         <KpiCard

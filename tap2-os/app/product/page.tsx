@@ -9,6 +9,8 @@ import {
   BarChart, Bar, AreaChart, Area,
 } from "recharts";
 import { Cpu, Smartphone, CreditCard, Bell, QrCode, RefreshCw } from "lucide-react";
+import { ExecutiveInsight } from "@/components/shared/executive-insight";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
 
 const BLUE = "#0358F1";
 
@@ -42,6 +44,11 @@ export default function ProductPage() {
 
   return (
     <div className="space-y-6">
+      <ExecutiveInsight
+        insight="Product metrics are seed data until wallet and product analytics sync is connected. These numbers show the intended data structure — connect a product analytics source to replace with live wallet installs, active cards, and redemption rates."
+        nextStep="Configure product analytics sync (custom API or webhook) to activate live product metrics."
+      />
+      <DataStatusBadge status="seed" integration="Product Sync Pending" />
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         <KpiCard title="Active Wallets" value={mockProductData.activeWallets.toLocaleString()} trend={5.1} trendLabel="MoM" icon={<Smartphone className="h-5 w-5" />} />
