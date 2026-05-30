@@ -1,5 +1,6 @@
 {
   "name": "tap2-os",
+  "description": "Tap2 Operating System — internal business intelligence dashboard for Tap2",
   "version": "0.1.0",
   "private": true,
   "scripts": {

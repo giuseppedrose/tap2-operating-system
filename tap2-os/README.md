@@ -34,8 +34,9 @@ Answers the founder's morning questions:
 ### 1. Clone & install dependencies
 
 ```bash
-git clone https://github.com/giuseppedrose/VeganHouse
-cd VeganHouse/tap2-os
+# The app lives in the tap2-os/ subfolder of this repository
+git clone https://github.com/giuseppedrose/VeganHouse tap2-operating-system
+cd tap2-operating-system/tap2-os
 npm install
 ```
 
@@ -133,7 +134,7 @@ See `.env.local.example` for the full template.
 
 ### 1. Connect repository
 
-Go to [vercel.com/new](https://vercel.com/new), import `giuseppedrose/VeganHouse`, and set **Root Directory** to `tap2-os`.
+Go to [vercel.com/new](https://vercel.com/new), import the repository (`giuseppedrose/VeganHouse`), and set **Root Directory** to `tap2-os`.
 
 ### 2. Add environment variables
 

@@ -50,7 +50,7 @@ export default function BoardPage() {
           </div>
           <div>
             <p className="text-xs text-gray-400">Focus Vertical</p>
-            <p className="text-sm font-semibold text-gray-900">Vegan / Plant-Based F&B</p>
+            <p className="text-sm font-semibold text-gray-900">HoReCa / Plant-Based F&B</p>
           </div>
         </div>
       </div>
