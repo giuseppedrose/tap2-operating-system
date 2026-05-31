@@ -21,7 +21,9 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/forecast":  { title: "Growth Forecast",         subtitle: "Scenarios · Milestones · Capital requirements" },
   "/investor":  { title: "Investor View",           subtitle: "Operating system overview" },
   "/board":     { title: "Board Dashboard",         subtitle: "Executive summary" },
-  "/admin":     { title: "Integration Hub",         subtitle: "Connect Stripe · HubSpot · Instantly · Rabobank" },
+  "/admin":                   { title: "Integration Hub",          subtitle: "Connect Stripe · HubSpot · Instantly · Rabobank" },
+  "/admin/data-discovery":   { title: "Data Discovery",           subtitle: "Profile real API data before restructuring dashboards" },
+  "/admin/restructure-plan": { title: "Restructure Plan",         subtitle: "What changes when real data is connected" },
 };
 
 const pageDataStatus: Record<string, { status: DataStatus; integration?: string }> = {
