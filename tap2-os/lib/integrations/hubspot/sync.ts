@@ -1,29 +1,13 @@
-import { hubspotFetch, isHubSpotConfigured } from './client'
-import type { HubSpotDeal, HubSpotCompany, HubSpotContact } from './types'
+import { isHubSpotConfigured, hsFetch, hsPost } from './client';
 
-export async function syncDeals(): Promise<HubSpotDeal[]> {
-  if (!isHubSpotConfigured) return []
-
-  const data = await hubspotFetch(
-    '/crm/v3/objects/deals?limit=100&properties=dealname,dealstage,amount,closedate,hs_deal_stage_probability,hubspot_owner_id'
-  )
-  return data.results as HubSpotDeal[]
+export async function syncHubSpotDeals(): Promise<unknown[]> {
+  if (!isHubSpotConfigured()) return [];
+  const data = await hsPost('/crm/v3/objects/deals/search', { limit: 100 });
+  return (data.results as unknown[]) ?? [];
 }
 
-export async function syncCompanies(): Promise<HubSpotCompany[]> {
-  if (!isHubSpotConfigured) return []
-
-  const data = await hubspotFetch(
-    '/crm/v3/objects/companies?limit=100&properties=name,domain,country,city,industry'
-  )
-  return data.results as HubSpotCompany[]
-}
-
-export async function syncContacts(): Promise<HubSpotContact[]> {
-  if (!isHubSpotConfigured) return []
-
-  const data = await hubspotFetch(
-    '/crm/v3/objects/contacts?limit=100&properties=firstname,lastname,email,company'
-  )
-  return data.results as HubSpotContact[]
+export async function syncHubSpotCompanies(): Promise<unknown[]> {
+  if (!isHubSpotConfigured()) return [];
+  const data = await hsPost('/crm/v3/objects/companies/search', { limit: 100 });
+  return (data.results as unknown[]) ?? [];
 }

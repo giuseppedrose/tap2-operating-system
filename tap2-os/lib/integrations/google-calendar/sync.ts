@@ -1,24 +1,7 @@
-import { googleCalendarFetch } from './client'
-import type { GoogleCalendarEvent } from './types'
+// Google Calendar requires OAuth flow — access token must be stored separately
+// This file is a placeholder until OAuth is implemented
 
-export async function syncCalendarEvents(
-  accessToken: string,
-  calendarId = 'primary',
-  timeMin?: string,
-  timeMax?: string
-): Promise<GoogleCalendarEvent[]> {
-  const params = new URLSearchParams({
-    singleEvents: 'true',
-    orderBy: 'startTime',
-    maxResults: '250',
-  })
-  if (timeMin) params.set('timeMin', timeMin)
-  if (timeMax) params.set('timeMax', timeMax)
-
-  const data = await googleCalendarFetch(
-    `/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
-    accessToken
-  )
-
-  return (data.items ?? []) as GoogleCalendarEvent[]
+export async function syncCalendarEvents(_accessToken?: string): Promise<unknown[]> {
+  // OAuth flow not yet implemented — see /api/auth/google
+  return [];
 }

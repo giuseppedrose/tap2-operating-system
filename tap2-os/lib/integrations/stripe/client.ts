@@ -1,17 +1,16 @@
-const secretKey = process.env.STRIPE_SECRET_KEY
+import { ENV } from '@/lib/config/env';
+// Server-side only
+export function getStripeKey(): string | undefined { return ENV.STRIPE_SECRET_KEY; }
+export const isStripeConfigured = () => Boolean(ENV.STRIPE_SECRET_KEY);
 
-export function getStripeClient() {
-  if (!secretKey) {
-    return null
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Stripe = require('stripe')
-    return new Stripe(secretKey, { apiVersion: '2024-11-20.acacia' })
-  } catch {
-    console.warn('Stripe SDK not available. Run: npm install stripe')
-    return null
-  }
+export async function stripeFetch(path: string, params?: Record<string, string>): Promise<Record<string, unknown>> {
+  const key = ENV.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('Stripe not configured');
+  const url = new URL(`https://api.stripe.com/v1${path}`);
+  if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${key}`, 'Stripe-Version': '2023-10-16' },
+  });
+  if (!res.ok) throw new Error(`Stripe API error: ${res.status}`);
+  return res.json() as Promise<Record<string, unknown>>;
 }
-
-export const isStripeConfigured = Boolean(secretKey)

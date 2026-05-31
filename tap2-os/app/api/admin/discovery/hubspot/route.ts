@@ -1,79 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSyncRun, completeSyncRun, upsertRawRecord, getSupabaseAdmin } from '@/lib/integrations/supabase-admin';
+import { ENV } from '@/lib/config/env';
+import { createSyncRun, completeSyncRun, upsertRawRecord, upsertDataProfile, getSupabaseAdmin } from '@/lib/integrations/supabase-admin';
 import { HUBSPOT_DEAL_MAPPINGS, HUBSPOT_COMPANY_MAPPINGS, HUBSPOT_REQUIRED_CUSTOM_PROPERTIES } from '@/lib/integrations/mapping/hubspot-mapper';
 import { confidenceScore } from '@/lib/integrations/mapping/mapping-confidence';
 
-function checkAuth(req: NextRequest): boolean {
-  const session = req.cookies.get('tap2_admin_session');
-  return Boolean(session?.value && session.value.length >= 32);
-}
+function checkAuth(req: NextRequest) { const s = req.cookies.get('tap2_admin_session'); return Boolean(s?.value && s.value.length >= 32); }
 
-async function hsGet(path: string, token: string, params?: Record<string, string>) {
+async function hsGet(path: string, params?: Record<string, string>): Promise<Record<string, unknown>> {
+  const t = ENV.HUBSPOT_ACCESS_TOKEN; if (!t) throw new Error('HubSpot not configured');
   const url = new URL(`https://api.hubapi.com${path}`);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
-  if (!res.ok) {
-    const err = await res.json() as { message?: string };
-    throw new Error(err.message ?? `HubSpot API error: ${res.status}`);
-  }
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error(`HubSpot ${res.status}`);
   return res.json() as Promise<Record<string, unknown>>;
 }
 
-async function hsPost(path: string, token: string, body: unknown) {
-  const res = await fetch(`https://api.hubapi.com${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json() as { message?: string };
-    throw new Error(err.message ?? `HubSpot API error: ${res.status}`);
-  }
+async function hsPost(path: string, body: unknown): Promise<Record<string, unknown>> {
+  const t = ENV.HUBSPOT_ACCESS_TOKEN; if (!t) throw new Error('HubSpot not configured');
+  const res = await fetch(`https://api.hubapi.com${path}`, { method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`HubSpot ${res.status}`);
   return res.json() as Promise<Record<string, unknown>>;
 }
 
-function profileProperties(props: Record<string, unknown>[]): { name: string; type: string; is_custom: boolean; population_rate: number }[] {
-  return props.slice(0, 50).map((p: Record<string, unknown>) => ({
-    name: String(p.name ?? ''),
-    type: String(p.type ?? 'unknown'),
-    is_custom: Boolean((p as Record<string, unknown>).hubspotDefined === false || String(p.name).startsWith('tap2_')),
-    population_rate: 0, // calculated after fetching records
-  }));
+async function fetchAllHS(objectType: string, properties: string[], max = 200): Promise<Record<string, unknown>[]> {
+  const results: Record<string, unknown>[] = [];
+  let after: string | undefined;
+  while (results.length < max) {
+    const body: Record<string, unknown> = { limit: 100, properties };
+    if (after) body.after = after;
+    const page = await hsPost(`/crm/v3/objects/${objectType}/search`, body);
+    const items = (page.results as Record<string, unknown>[]) ?? [];
+    results.push(...items);
+    const paging = page.paging as Record<string, unknown> | undefined;
+    const next = (paging?.next as Record<string, unknown> | undefined)?.after;
+    if (!next || !items.length) break;
+    after = String(next);
+  }
+  return results;
+}
+
+function profileProps(records: Record<string, unknown>[], propNames: string[]) {
+  return propNames.map(name => {
+    const populated = records.filter(r => {
+      const p = (r.properties as Record<string, unknown>) ?? r;
+      return p[name] != null && p[name] !== '' && p[name] !== '0';
+    }).length;
+    return { name, population_rate: records.length ? Math.round((populated / records.length) * 100) : 0 };
+  }).sort((a, b) => b.population_rate - a.population_rate);
 }
 
 export async function POST(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const token = ENV.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return NextResponse.json({ status: 'no_credentials', source: 'hubspot', message: 'HubSpot token not found. Check Hubspot or HUBSPOT_ACCESS_TOKEN in Vercel env vars.', records_fetched: 0 });
 
-  const token = process.env.HUBSPOT_ACCESS_TOKEN;
-  if (!token) {
-    return NextResponse.json({ status: 'no_credentials', source: 'hubspot', message: 'HUBSPOT_ACCESS_TOKEN not configured. Add it to Vercel environment variables.', records_fetched: 0 });
-  }
-
-  let syncRunId: string | null = null;
+  let runId: string | null = null;
   try {
-    syncRunId = await createSyncRun('hubspot', 'discovery');
+    runId = await createSyncRun('hubspot', 'discovery');
 
-    // Fetch all in parallel where possible
-    const [companiesRes, contactsRes, dealsRes, ownersRes, pipelinesRes] = await Promise.all([
-      hsPost('/crm/v3/objects/companies/search', token, { limit: 100, properties: ['name','domain','country','city','industry','hs_lead_status','hubspot_owner_id','createdate'] }),
-      hsPost('/crm/v3/objects/contacts/search', token, { limit: 100, properties: ['email','firstname','lastname','hs_lead_status','hubspot_owner_id','associatedcompanyid','createdate'] }),
-      hsPost('/crm/v3/objects/deals/search', token, { limit: 100, properties: ['dealname','dealstage','amount','closedate','hubspot_owner_id','pipeline','hs_probability','createdate','hs_lastmodifieddate','hs_analytics_source'] }),
-      hsGet('/crm/v3/owners', token, { limit: '100' }),
-      hsGet('/crm/v3/pipelines/deals', token),
+    // Fetch everything in parallel
+    const [companies, contacts, deals, ownersRes, pipelinesRes, dealPropsRes, companyPropsRes, contactPropsRes] = await Promise.all([
+      fetchAllHS('companies', ['name','domain','country','city','industry','hs_lead_status','hubspot_owner_id','createdate','numberofemployees','annualrevenue','tap2_segment'], 200),
+      fetchAllHS('contacts', ['email','firstname','lastname','hs_lead_status','hubspot_owner_id','associatedcompanyid','createdate','lifecyclestage','phone'], 200),
+      fetchAllHS('deals', ['dealname','dealstage','amount','closedate','hubspot_owner_id','pipeline','hs_probability','createdate','hs_lastmodifieddate','hs_analytics_source','deal_currency_code','tap2_expected_mrr','tap2_partner_owner','tap2_use_case','tap2_market','tap2_campaign_id','tap2_next_step','tap2_next_step_due_date','tap2_lost_reason','tap2_competitor','tap2_icp_fit','hs_deal_stage_probability'], 300),
+      hsGet('/crm/v3/owners', { limit: '100' }),
+      hsGet('/crm/v3/pipelines/deals'),
+      hsGet('/crm/v3/properties/deals', { limit: '500' }),
+      hsGet('/crm/v3/properties/companies', { limit: '500' }),
+      hsGet('/crm/v3/properties/contacts', { limit: '500' }),
     ]);
 
-    // Fetch property definitions
-    const [dealPropsRes, companyPropsRes, contactPropsRes] = await Promise.all([
-      hsGet('/crm/v3/properties/deals', token),
-      hsGet('/crm/v3/properties/companies', token),
-      hsGet('/crm/v3/properties/contacts', token),
-    ]);
-
-    const companies = (companiesRes.results as Record<string, unknown>[]) ?? [];
-    const contacts = (contactsRes.results as Record<string, unknown>[]) ?? [];
-    const deals = (dealsRes.results as Record<string, unknown>[]) ?? [];
     const owners = (ownersRes.results as Record<string, unknown>[]) ?? [];
     const pipelines = (pipelinesRes.results as Record<string, unknown>[]) ?? [];
     const dealProps = (dealPropsRes.results as Record<string, unknown>[]) ?? [];
@@ -82,80 +78,105 @@ export async function POST(req: NextRequest) {
 
     // Write raw records
     let written = 0;
-    for (const c of companies) { const p = (c.properties as Record<string, unknown>) ?? c; try { await upsertRawRecord('raw_hubspot_companies', String(c.id), p, syncRunId); written++; } catch {} }
-    for (const c of contacts) { const p = (c.properties as Record<string, unknown>) ?? c; try { await upsertRawRecord('raw_hubspot_contacts', String(c.id), p, syncRunId); written++; } catch {} }
-    for (const d of deals) { const p = (d.properties as Record<string, unknown>) ?? d; try { await upsertRawRecord('raw_hubspot_deals', String(d.id), p, syncRunId); written++; } catch {} }
-    for (const o of owners) { try { await upsertRawRecord('raw_hubspot_owners', String(o.id), o as Record<string, unknown>, syncRunId); written++; } catch {} }
+    for (const c of companies) { const p = (c.properties as Record<string, unknown>) ?? c; try { await upsertRawRecord('raw_hubspot_companies', String(c.id), p, runId); written++; } catch {} }
+    for (const c of contacts) { const p = (c.properties as Record<string, unknown>) ?? c; try { await upsertRawRecord('raw_hubspot_contacts', String(c.id), p, runId); written++; } catch {} }
+    for (const d of deals) { const p = (d.properties as Record<string, unknown>) ?? d; try { await upsertRawRecord('raw_hubspot_deals', String(d.id), p, runId); written++; } catch {} }
+    for (const o of owners) { try { await upsertRawRecord('raw_hubspot_owners', String(o.id), o as Record<string, unknown>, runId); written++; } catch {} }
 
-    // Write property definitions to raw table
+    // Write property definitions
     const sb = getSupabaseAdmin();
-    for (const prop of dealProps.slice(0, 200)) {
-      try {
-        await sb.from('raw_hubspot_properties').upsert({ object_type: 'deals', property_name: String(prop.name), raw_payload: prop, fetched_at: new Date().toISOString(), sync_run_id: syncRunId }, { onConflict: 'object_type,property_name' });
-      } catch {}
+    for (const prop of dealProps.slice(0, 300)) {
+      try { await sb.from('raw_hubspot_properties').upsert({ object_type: 'deals', property_name: String(prop.name), raw_payload: prop, fetched_at: new Date().toISOString(), sync_run_id: runId }, { onConflict: 'object_type,property_name' }); } catch {}
     }
 
-    // Detect which Tap2 custom properties exist
-    const dealPropNames = dealProps.map((p: Record<string, unknown>) => String(p.name));
-    const tap2CustomFound = HUBSPOT_REQUIRED_CUSTOM_PROPERTIES.filter(p => dealPropNames.includes(p.name) || dealPropNames.includes(p.name));
-    const tap2CustomMissing = HUBSPOT_REQUIRED_CUSTOM_PROPERTIES.filter(p => !dealPropNames.includes(p.name));
+    // Detect deal stages from pipelines
+    const stages = pipelines.flatMap(pl => ((pl.stages as Record<string, unknown>[]) ?? []).map(s => ({
+      pipeline_id: pl.id, pipeline_label: pl.label,
+      stage_id: s.id, stage_label: s.label,
+      probability: ((s.metadata as Record<string, number>)?.probability ?? 0) * 100,
+      is_closed: Boolean((s.metadata as Record<string, boolean>)?.isClosed),
+      is_won: (s.metadata as Record<string, string>)?.closedWon === 'true',
+    })));
 
-    // Detect deal stages
-    const stageInfo = pipelines.flatMap((pl: Record<string, unknown>) =>
-      ((pl.stages as Record<string, unknown>[]) ?? []).map((s: Record<string, unknown>) => ({
-        pipeline: pl.label,
-        stage_id: s.id,
-        stage_label: s.label,
-        probability: (s.metadata as Record<string, number>)?.probability,
-        closed_won: (s.metadata as Record<string, boolean>)?.isClosed && (s.metadata as Record<string, string>)?.closedWon === 'true',
-      }))
-    );
+    // Property analysis
+    const dealPropNames = dealProps.map(p => String(p.name));
+    const tap2PropsFound = HUBSPOT_REQUIRED_CUSTOM_PROPERTIES.filter(p => dealPropNames.includes(p.name)).map(p => p.name);
+    const tap2PropsMissing = HUBSPOT_REQUIRED_CUSTOM_PROPERTIES.filter(p => !dealPropNames.includes(p.name)).map(p => ({ name: p.name, label: p.label, priority: p.priority }));
 
-    // Population rate for deal fields
-    const dealFieldPopulation = dealProps.slice(0, 20).map((prop: Record<string, unknown>) => {
-      const populated = deals.filter(d => {
-        const props = (d.properties as Record<string, unknown>) ?? d;
-        return props[String(prop.name)] != null && props[String(prop.name)] !== '';
-      }).length;
-      return { field: prop.name, population_rate: deals.length ? Math.round((populated / deals.length) * 100) : 0 };
-    }).sort((a, b) => b.population_rate - a.population_rate);
+    // Custom vs standard property breakdown
+    const customProps = dealProps.filter(p => !(p as Record<string, boolean>).hubspotDefined).map(p => String(p.name));
+    const tap2OwnedProps = customProps.filter(n => n.startsWith('tap2_'));
+
+    // Deal population rates for key fields
+    const keyDealFields = ['dealname','dealstage','amount','closedate','hubspot_owner_id','tap2_expected_mrr','tap2_partner_owner','tap2_use_case','tap2_market','tap2_next_step','hs_analytics_source'];
+    const dealFieldPopulation = profileProps(deals, keyDealFields);
+
+    // Pipeline value calculation
+    const totalPipeline = deals.reduce((s, d) => {
+      const p = (d.properties as Record<string, unknown>) ?? d;
+      return s + Number(p.amount ?? 0);
+    }, 0);
+    const stageBreakdown = stages.map(stage => ({
+      ...stage,
+      deal_count: deals.filter(d => { const p = (d.properties as Record<string, unknown>) ?? d; return p.dealstage === stage.stage_id; }).length,
+    }));
+
+    // Lifecycle stage breakdown for contacts
+    const lifecycleStages: Record<string, number> = {};
+    contacts.forEach(c => {
+      const p = (c.properties as Record<string, unknown>) ?? c;
+      const stage = String(p.lifecyclestage ?? 'unknown');
+      lifecycleStages[stage] = (lifecycleStages[stage] ?? 0) + 1;
+    });
 
     const meta = {
-      company_count: companies.length, contact_count: contacts.length, deal_count: deals.length,
-      owner_count: owners.length, pipeline_count: pipelines.length,
-      total_deal_properties: dealProps.length, total_company_properties: companyProps.length, total_contact_properties: contactProps.length,
-      tap2_custom_properties_found: tap2CustomFound.map(p => p.name),
-      tap2_custom_properties_missing: tap2CustomMissing.map(p => p.name),
-      deal_stages_detected: stageInfo,
-      deal_field_population_top20: dealFieldPopulation,
-      owner_names: owners.map((o: Record<string, unknown>) => `${o.firstName} ${o.lastName}`.trim()),
+      company_count: companies.length,
+      contact_count: contacts.length,
+      deal_count: deals.length,
+      owner_count: owners.length,
+      pipeline_count: pipelines.length,
+      stage_count: stages.length,
+      total_deal_props: dealProps.length,
+      total_company_props: companyProps.length,
+      total_contact_props: contactProps.length,
+      custom_props_found: customProps.length,
+      tap2_props_found: tap2OwnedProps,
+      tap2_props_missing: tap2PropsMissing,
+      deal_stages: stageBreakdown,
+      total_pipeline_value: totalPipeline,
+      deal_field_population: dealFieldPopulation,
+      lifecycle_stage_breakdown: lifecycleStages,
+      owner_names: owners.map(o => `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim()),
       mapping_confidence: { deals: confidenceScore(HUBSPOT_DEAL_MAPPINGS), companies: confidenceScore(HUBSPOT_COMPANY_MAPPINGS) },
-      has_more: { companies: Number(companiesRes.total ?? 0) > 100, contacts: Number(contactsRes.total ?? 0) > 100, deals: Number(dealsRes.total ?? 0) > 100 },
+      data_quality_notes: [
+        tap2PropsMissing.length > 0 ? `${tap2PropsMissing.length} Tap2 custom properties missing from HubSpot — must create before full sync` : '✓ All Tap2 custom properties found',
+        totalPipeline > 0 ? `€${totalPipeline.toLocaleString()} total pipeline detected` : 'No pipeline value detected — check amount field',
+        stages.length > 0 ? `${stages.length} deal stages detected across ${pipelines.length} pipeline(s)` : 'No deal stages detected',
+        deals.length > 0 ? `Deal field populations: ${dealFieldPopulation.slice(0,3).map(f => `${f.name}=${f.population_rate}%`).join(', ')}` : '',
+      ].filter(Boolean),
     };
 
-    await completeSyncRun(syncRunId, 'completed', { fetched: companies.length + contacts.length + deals.length + owners.length, written }, meta);
-    return NextResponse.json({
-      status: 'ok', source: 'hubspot', sync_run_id: syncRunId,
-      message: `${companies.length} companies, ${contacts.length} contacts, ${deals.length} deals, ${owners.length} owners discovered.`,
+    await upsertDataProfile('hubspot', 'deals', runId, { record_count: deals.length, field_count: keyDealFields.length, fields: dealFieldPopulation, quality_score: Math.min(100, Math.round(tap2OwnedProps.length * 8 + (deals.length > 0 ? 40 : 0))), mapping_recommendations: HUBSPOT_DEAL_MAPPINGS });
+    await upsertDataProfile('hubspot', 'companies', runId, { record_count: companies.length, field_count: companyProps.length, fields: [], quality_score: companies.length > 0 ? 70 : 0, mapping_recommendations: HUBSPOT_COMPANY_MAPPINGS });
+
+    await completeSyncRun(runId, 'completed', { fetched: companies.length + contacts.length + deals.length + owners.length, written }, meta);
+
+    return NextResponse.json({ status: 'ok', source: 'hubspot', sync_run_id: runId,
+      message: `${companies.length} companies · ${contacts.length} contacts · ${deals.length} deals · ${owners.length} owners · ${tap2OwnedProps.length}/${HUBSPOT_REQUIRED_CUSTOM_PROPERTIES.length} Tap2 custom props found`,
       records_fetched: companies.length + contacts.length + deals.length + owners.length,
-      profile: meta, deal_mappings: HUBSPOT_DEAL_MAPPINGS, company_mappings: HUBSPOT_COMPANY_MAPPINGS,
-      required_custom_properties: HUBSPOT_REQUIRED_CUSTOM_PROPERTIES,
-    });
+      profile: meta, deal_mappings: HUBSPOT_DEAL_MAPPINGS, required_custom_properties: HUBSPOT_REQUIRED_CUSTOM_PROPERTIES });
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    if (syncRunId) await completeSyncRun(syncRunId, 'error', { fetched: 0, written: 0 }, {}, msg).catch(() => null);
+    if (runId) await completeSyncRun(runId, 'error', { fetched: 0, written: 0 }, {}, msg).catch(() => null);
     return NextResponse.json({ status: 'error', source: 'hubspot', message: msg, records_fetched: 0 }, { status: 500 });
   }
 }
 
 export async function GET(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const configured = Boolean(process.env.HUBSPOT_ACCESS_TOKEN);
+  const configured = Boolean(ENV.HUBSPOT_ACCESS_TOKEN);
   let lastRun = null;
-  try {
-    const { data } = await getSupabaseAdmin().from('source_sync_runs').select('*').eq('source', 'hubspot').order('created_at', { ascending: false }).limit(1).single();
-    lastRun = data;
-  } catch {}
+  try { const { data } = await getSupabaseAdmin().from('source_sync_runs').select('*').eq('source', 'hubspot').order('created_at', { ascending: false }).limit(1).single(); lastRun = data; } catch {}
   return NextResponse.json({ configured, last_run: lastRun });
 }

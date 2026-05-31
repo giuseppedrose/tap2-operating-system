@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ENV } from '@/lib/config/env';
 
 const ADMIN_COOKIE = 'tap2_admin_session';
 const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
-  const { username, password } = body as { username?: string; password?: string };
+  const body = await request.json().catch(() => ({})) as { username?: string; password?: string };
+  const { username, password } = body;
 
-  const expectedUsername = process.env.ADMIN_USERNAME;
-  const expectedPassword = process.env.ADMIN_PASSWORD;
+  const expectedUsername = ENV.ADMIN_USERNAME;
+  const expectedPassword = ENV.ADMIN_PASSWORD;
 
-  // If env vars not set, deny access entirely
   if (!expectedUsername || !expectedPassword) {
     return NextResponse.json(
-      { error: 'Admin credentials not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD in environment variables.' },
+      { error: 'Admin credentials not configured. Set ADMIN_USERNAME and ADMIN_PASSWORD in Vercel environment variables.' },
       { status: 503 }
     );
   }
@@ -23,17 +23,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (username !== expectedUsername || password !== expectedPassword) {
-    // Constant-time comparison would be better in production, but fine for internal tool
     return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
   }
 
-  // Create a simple session token (hash of username+password+timestamp)
   const tokenData = `${username}:${Date.now()}:tap2os`;
   const encoder = new TextEncoder();
-  const data = encoder.encode(tokenData);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const token = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(tokenData));
+  const token = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
   const response = NextResponse.json({ ok: true });
   response.cookies.set(ADMIN_COOKIE, token, {
@@ -43,6 +39,5 @@ export async function POST(request: NextRequest) {
     maxAge: COOKIE_MAX_AGE,
     path: '/',
   });
-
   return response;
 }
