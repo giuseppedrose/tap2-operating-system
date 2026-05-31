@@ -5,25 +5,43 @@ import { FATHOM_MEETING_MAPPINGS, FATHOM_HUBSPOT_MATCHING_STRATEGY } from '@/lib
 
 function checkAuth(req: NextRequest) { const s = req.cookies.get('tap2_admin_session'); return Boolean(s?.value && s.value.length >= 32); }
 
-// Fathom (meeting recorder) does not publish a public REST API for reading meeting data.
-// Their key types are: (1) webhook signing secret — for verifying incoming webhooks,
-// (2) no documented read API key exists. Use the MCP Claude integration for meeting access.
-// We try one endpoint quickly; if it 4xx or times out, we surface the correct explanation.
-async function probeFathomAPI(apiKey: string): Promise<{ url: string; data: Record<string, unknown> } | null> {
+// Fathom.video API probe — try multiple endpoints and auth formats.
+// Their docs are sparse; we try the most likely combinations with short timeouts.
+type ProbeResult = { url: string; data: Record<string, unknown>; authMethod: string } | null;
+
+async function tryFetch(url: string, headers: Record<string, string>): Promise<Response | null> {
   try {
-    const res = await fetch('https://api.fathom.video/v1/calls?limit=5', {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json() as Record<string, unknown>;
-      return { url: 'https://api.fathom.video/v1/calls', data };
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(4000) });
+    return r;
+  } catch { return null; }
+}
+
+async function probeFathomAPI(apiKey: string): Promise<ProbeResult> {
+  const endpoints = [
+    'https://api.fathom.video/v1/calls',
+    'https://api.fathom.video/v1/recordings',
+    'https://api.fathom.video/v1/meetings',
+  ];
+  const authVariants = [
+    { key: 'Authorization', value: `Bearer ${apiKey}`, label: 'Bearer' },
+    { key: 'X-API-Key', value: apiKey, label: 'X-API-Key' },
+    { key: 'Authorization', value: `Token ${apiKey}`, label: 'Token' },
+  ];
+
+  for (const endpoint of endpoints) {
+    for (const auth of authVariants) {
+      const r = await tryFetch(`${endpoint}?limit=10`, { [auth.key]: auth.value });
+      if (!r) continue;
+      if (r.ok) {
+        const data = await r.json() as Record<string, unknown>;
+        return { url: endpoint, data, authMethod: auth.label };
+      }
+      // 401/403 on a known endpoint means auth format is wrong for that endpoint — keep trying
+      // 404 means endpoint doesn't exist — try next
+      // 5xx means server error — try next
     }
-    // 4xx = endpoint exists but rejected key or no API exists
-    return null;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -36,19 +54,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error_code: 'missing_env_var', status: 'no_credentials', source: 'fathom', message: 'Fathom key not found. Check Fathom or FATHOM_API_KEY in Vercel env vars.', records_fetched: 0 });
   }
 
-  // Note: Fathomwebhook looks like a webhook signing secret, not a read API key.
-  // Fathom's REST API may require a different key type.
   if (!apiKey && webhookKey) {
     return NextResponse.json({
       error_code: 'insufficient_api_scope',
       status: 'error',
       source: 'fathom',
-      message: 'Only Fathomwebhook found — this appears to be a webhook signing secret, not a REST API read key. Fathom may require a separate API key for reading meeting data.',
+      message: 'Only Fathomwebhook found. This is a webhook signing secret, not a read API key. Add a Fathom API key (Fathom var in Vercel) to enable REST discovery.',
       advice: [
-        'Fathomwebhook is for verifying incoming webhooks FROM Fathom, not for reading data',
-        'Check if Fathom provides a separate "API key" or "Personal access token" in their dashboard',
-        'The Fathom MCP integration in Claude uses a different auth mechanism',
-        'If no read API exists, Fathom data can only be received via webhooks',
+        'Go to Fathom dashboard → Settings → Integrations or API',
+        'Generate a personal access token or API key',
+        'Add it to Vercel as the "Fathom" environment variable',
       ],
       records_fetched: 0,
     });
@@ -58,50 +73,53 @@ export async function POST(req: NextRequest) {
   try {
     runId = await createSyncRun('fathom', 'discovery');
 
-    // Probe Fathom API to find the correct endpoint
     const probeResult = await probeFathomAPI(apiKey!);
 
     if (!probeResult) {
-      // API unreachable — provide diagnostic info
-      await completeSyncRun(runId, 'error', { fetched: 0, written: 0 }, {}, 'Fathom API endpoint not found');
+      await completeSyncRun(runId, 'error', { fetched: 0, written: 0 }, {}, 'No Fathom API endpoint responded successfully');
       return NextResponse.json({
         error_code: 'upstream_api_error',
         status: 'error',
         source: 'fathom',
-        message: 'Fathom does not expose a public REST API for reading meeting data. Only webhook delivery is supported. Use the Fathom MCP integration in Claude for meeting access.',
+        message: 'Tried Bearer, X-API-Key, and Token auth on /v1/calls, /v1/recordings, /v1/meetings — none returned 200. The key may be a webhook secret, or Fathom requires a different auth mechanism.',
+        endpoints_tried: ['/v1/calls', '/v1/recordings', '/v1/meetings'],
+        auth_tried: ['Bearer', 'X-API-Key', 'Token'],
         advice: [
-          'The Fathom key in your Vercel env vars is a webhook signing secret, not a read API key',
-          'Fathom meeting data is readable via the Fathom MCP Claude integration (already connected)',
-          'To push meetings into Supabase, set up a Fathom webhook → /api/webhooks/fathom',
+          'Confirm the key in Vercel "Fathom" var is a REST API key, not a webhook secret',
+          'Check Fathom dashboard for the correct API key format',
+          'Fathom MCP integration works separately via Claude — this route is for bulk data ingestion',
         ],
         records_fetched: 0,
       });
     }
 
-    // We found a working endpoint
-    const meetings = (probeResult.data.calls ?? probeResult.data.recordings ?? probeResult.data.items ?? []) as Record<string, unknown>[];
+    const meetings = (
+      probeResult.data.calls ??
+      probeResult.data.recordings ??
+      probeResult.data.meetings ??
+      probeResult.data.items ??
+      probeResult.data.data ??
+      []
+    ) as Record<string, unknown>[];
     let written = 0;
 
     for (const m of meetings) {
-      // Strip any transcript content for privacy
       const safe: Record<string, unknown> = { ...m };
       delete safe.transcript; delete safe.full_transcript; delete safe.transcript_text;
       try { await upsertRawRecord('raw_fathom_meetings', String(m.id ?? m.call_id ?? m.recording_id), safe, runId); written++; } catch {}
     }
 
-    // Try to get summaries
-    const summaryCount = 0;
     const allEmails: string[] = [];
     meetings.forEach(m => {
       const attendees = (m.attendees ?? m.participants ?? []) as Record<string, string>[];
-      attendees.forEach(a => { if (a.email) allEmails.push(a.email); });
+      attendees.forEach((a: Record<string, string>) => { if (a.email) allEmails.push(a.email); });
     });
-    const uniqueDomains = [...new Set(allEmails.map(e => e.split('@')[1]).filter(Boolean))];
+    const uniqueDomains = [...new Set(allEmails.map((e: string) => e.split('@')[1]).filter(Boolean))];
 
     const meta = {
-      api_endpoint_found: probeResult.url,
+      api_endpoint: probeResult.url,
+      auth_method: probeResult.authMethod,
       meeting_count: meetings.length,
-      summaries_fetched: summaryCount,
       unique_participant_domains: uniqueDomains.slice(0, 30),
       fields_available: meetings.length > 0 ? Object.keys(meetings[0]).filter(k => !['transcript','full_transcript','transcript_text'].includes(k)) : [],
       hubspot_matching_strategy: FATHOM_HUBSPOT_MATCHING_STRATEGY,
@@ -111,7 +129,7 @@ export async function POST(req: NextRequest) {
     await completeSyncRun(runId, 'completed', { fetched: meetings.length, written }, meta);
 
     return NextResponse.json({ status: 'ok', source: 'fathom', sync_run_id: runId,
-      message: `${meetings.length} meetings discovered from ${probeResult.url}`,
+      message: `${meetings.length} meetings discovered via ${probeResult.url} (${probeResult.authMethod} auth)`,
       records_fetched: meetings.length, profile: meta });
 
   } catch (err) {
