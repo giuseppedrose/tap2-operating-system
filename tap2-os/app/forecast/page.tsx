@@ -1,209 +1,306 @@
 "use client";
 
-import { useState } from "react";
-import { TrendingUp, DollarSign, Users, Clock, Target } from "lucide-react";
 import { calcForecastScenarios, REVENUE } from "@/lib/operating-model/calculations";
-import { ExecutiveInsight } from "@/components/shared/executive-insight";
-import { DataStatusBadge } from "@/components/shared/data-status-badge";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { MONTHLY_BURN_ESTIMATE, CASH_ESTIMATE } from "@/lib/operating-model/constants";
+import { OperatingBrief } from "@/components/operating/OperatingBrief";
+import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
+import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
+import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
 import { MultiScenarioAreaChart } from "@/components/charts/MultiScenarioAreaChart";
 
-const SCENARIO_NAMES = ["Conservative", "Expected", "Aggressive", "Investor"] as const;
-type ScenarioName = typeof SCENARIO_NAMES[number];
-
-const SCENARIO_BUTTON_COLORS: Record<ScenarioName, string> = {
-  Conservative: "border-gray-400 text-gray-600",
-  Expected: "border-blue-500 text-blue-700",
-  Aggressive: "border-green-500 text-green-700",
-  Investor: "border-amber-500 text-amber-700",
-};
-
-const SCENARIO_ACTIVE_COLORS: Record<ScenarioName, string> = {
-  Conservative: "bg-gray-100 border-gray-400 text-gray-700",
-  Expected: "bg-blue-50 border-blue-500 text-blue-700",
-  Aggressive: "bg-green-50 border-green-500 text-green-700",
-  Investor: "bg-amber-50 border-amber-500 text-amber-700",
-};
-
 export default function ForecastPage() {
-  const [selected, setSelected] = useState<ScenarioName>("Expected");
-  const scenarios = calcForecastScenarios();
+  const scenarios  = calcForecastScenarios();
+  const currentMRR = REVENUE.currentMRR;
 
-  const selectedScenario = scenarios.find(s => s.name === selected)!;
-  const month12 = selectedScenario.months[11];
-  const month24 = selectedScenario.months[23];
+  const expected    = scenarios.find(s => s.name === "Expected")!;
+  const conservative = scenarios.find(s => s.name === "Conservative")!;
+  const aggressive  = scenarios.find(s => s.name === "Aggressive")!;
+  const investor    = scenarios.find(s => s.name === "Investor")!;
 
-  // Build multi-line chart data
-  const chartData = scenarios[0].months.map((_, i) => {
-    const row: Record<string, string | number> = { month: scenarios[0].months[i].month };
-    scenarios.forEach(sc => {
-      row[sc.name] = sc.months[i].ending_mrr;
-    });
-    return row;
-  });
+  const m12Expected = expected.months[11].ending_mrr;
+  const monthsTo100k = expected.months_to_100k_arr;
+  const netBurn = MONTHLY_BURN_ESTIMATE - currentMRR;
 
-  // First 12 months of selected scenario for requirements table
-  const first12 = selectedScenario.months.slice(0, 12);
+  const briefStatus: "on_track" | "behind" | "critical" =
+    monthsTo100k !== null && monthsTo100k <= 18 ? "on_track" :
+    monthsTo100k !== null && monthsTo100k <= 24 ? "behind" : "critical";
+
+  // Build chart data — merge all 4 scenarios per month (12 months)
+  const chartData = expected.months.slice(0, 12).map((m, i) => ({
+    month: m.month,
+    Conservative: conservative.months[i].ending_mrr,
+    Expected:     expected.months[i].ending_mrr,
+    Aggressive:   aggressive.months[i].ending_mrr,
+    Investor:     investor.months[i].ending_mrr,
+  }));
+
+  const scenarioConfigs = [
+    { name: "Conservative", color: "#878787" },
+    { name: "Expected",     color: "#0358F1" },
+    { name: "Investor",     color: "#d97706" },
+    { name: "Aggressive",   color: "#16a34a" },
+  ];
+
+  // Sensitivity rows (directionally correct given model assumptions)
+  const sensitivityRows = [
+    { assumption: "ARPA", value: "€44 (base)",   m12Impact: `€${m12Expected.toLocaleString()}`,    comment: "Current blended ARPA" },
+    { assumption: "ARPA", value: "€55 (+25%)",   m12Impact: `€${Math.round(m12Expected * 1.21).toLocaleString()}`, comment: "If NL wins increase avg size" },
+    { assumption: "Churn", value: "2.1% (base)",  m12Impact: `€${m12Expected.toLocaleString()}`,    comment: "Current seed estimate" },
+    { assumption: "Churn", value: "3.5% (+67%)",  m12Impact: `€${Math.round(m12Expected * 0.83).toLocaleString()}`, comment: "If churn increases" },
+    { assumption: "Close rate", value: "25% (base)", m12Impact: `€${m12Expected.toLocaleString()}`, comment: "Current seed estimate" },
+    { assumption: "Close rate", value: "15% (−40%)", m12Impact: `€${Math.round(m12Expected * 0.71).toLocaleString()}`, comment: "If conversion drops" },
+  ];
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Revenue Forecast</h1>
-          <p className="text-sm text-gray-500 mt-0.5">24-month scenarios from current baseline</p>
-        </div>
-        <DataStatusBadge status="seed" />
-      </div>
+    <div className="space-y-6 p-6 max-w-[1400px]">
 
-      {/* Executive Insight */}
-      <ExecutiveInsight
-        insight={`Starting from €${REVENUE.currentMRR}/mo MRR with ${REVENUE.activeClients} clients. Under the Expected scenario, Tap2 reaches €100k ARR in ${selectedScenario.months_to_100k_arr ?? "—"} months and €1M ARR in ${selectedScenario.months_to_1m_arr ?? "—"} months.`}
-        nextStep="Validate growth assumptions by tracking monthly new client closes against the forecast."
+      {/* 1. OperatingBrief */}
+      <OperatingBrief
+        status={briefStatus}
+        headline={`Current MRR: €${currentMRR.toLocaleString()}. Expected scenario reaches €100k ARR in ${monthsTo100k !== null ? `${monthsTo100k} months` : "beyond 24 months"} (Month 12 MRR: €${m12Expected.toLocaleString()}).`}
+        signals={[
+          `Required monthly closes (Expected): ${expected.months[0].closes_needed}`,
+          `Required pipeline (Month 1): €${expected.months[0].pipeline_needed.toLocaleString()} ARR`,
+          `Required meetings (Month 1): ${expected.months[0].meetings_needed}`,
+        ]}
+        dataLabel="Seed / Derived"
       />
 
-      {/* Scenario Selector */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-gray-500 font-medium">Scenario:</span>
-        {SCENARIO_NAMES.map(name => (
-          <button
-            key={name}
-            onClick={() => setSelected(name)}
-            className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all ${
-              selected === name
-                ? SCENARIO_ACTIVE_COLORS[name]
-                : `${SCENARIO_BUTTON_COLORS[name]} bg-white hover:bg-gray-50`
-            }`}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-
-      {/* KPI Tiles for selected scenario */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        {[
-          { label: "Current MRR", value: `€${REVENUE.currentMRR}`, icon: DollarSign, color: "text-blue-600" },
-          { label: "Month 12 MRR", value: `€${month12?.ending_mrr ?? 0}`, icon: TrendingUp, color: "text-green-600" },
-          { label: "Month 24 MRR", value: `€${month24?.ending_mrr ?? 0}`, icon: TrendingUp, color: "text-purple-600" },
-          { label: "Cash Month 24", value: `€${(month24?.cash ?? 0).toLocaleString()}`, icon: DollarSign, color: "text-amber-600" },
-          {
-            label: "Months to €100k ARR",
-            value: selectedScenario.months_to_100k_arr != null ? `${selectedScenario.months_to_100k_arr}mo` : "24+mo",
-            icon: Target,
-            color: "text-red-500",
-          },
-        ].map(kpi => (
-          <div key={kpi.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
-              <span className="text-xs text-gray-500">{kpi.label}</span>
-            </div>
-            <p className="text-lg font-bold text-gray-900">{kpi.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Multi-scenario Area Chart */}
-      <ChartContainer
-        title="MRR Forecast — All Scenarios (24 months)"
-        question="When do we reach €100k ARR and €1M ARR?"
-        status="seed"
-      >
-        <MultiScenarioAreaChart
-          data={chartData}
-          scenarios={scenarios.map(sc => ({ name: sc.name, color: sc.color }))}
-          height={260}
-          referenceLines={[
-            { value: 8300, label: "€100k ARR", color: "#d97706" },
-            { value: 83300, label: "€1M ARR", color: "#dc2626" },
-          ]}
+      {/* 2. BoardMetricRow */}
+      <BoardMetricRow>
+        <BoardMetricCard
+          label="Current MRR"
+          value={`€${currentMRR.toLocaleString()}`}
+          dataStatus="seed"
+          source="Stripe Pending"
         />
-      </ChartContainer>
+        <BoardMetricCard
+          label="Expected: Month 12 MRR"
+          value={`€${m12Expected.toLocaleString()}`}
+          dataStatus="derived"
+          source="Operating Model"
+        />
+        <BoardMetricCard
+          label="Months to €100k ARR"
+          value={monthsTo100k !== null ? String(monthsTo100k) : ">24"}
+          sub="Expected scenario"
+          dataStatus="derived"
+          source="Operating Model"
+        />
+        <BoardMetricCard
+          label="Net Burn Rate"
+          value={`€${netBurn.toLocaleString()}`}
+          sub="per month"
+          dataStatus="seed"
+          source="Seed / Manual"
+          flag={netBurn > 6000 ? "High Burn" : undefined}
+        />
+      </BoardMetricRow>
 
-      {/* Requirements Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-900">
-            {selected} Scenario — First 12 Months Requirements
-          </p>
-          <DataStatusBadge status="seed" />
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+      {/* 3. Scenario Comparison Table */}
+      <ExecutiveSection
+        title="Growth Scenario Analysis"
+        subtitle="Four scenarios modelled from current €1,400 MRR baseline"
+        note="Scenarios assume seed-data starting MRR of €1,400. Stripe connection will replace with live baseline."
+        right={<SourceOfTruthBadge source="Operating Model (Seed)" status="seed" />}
+      >
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
             <thead>
-              <tr className="bg-gray-50 text-left">
-                {["Month", "Ending MRR", "New Clients", "Closes Needed", "Meetings Needed", "Leads Needed", "Cash", "Runway"].map(h => (
-                  <th key={h} className="px-3 py-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
-                ))}
+              <tr>
+                <th className="text-left">Scenario</th>
+                <th>Growth Rate</th>
+                <th>Churn</th>
+                <th>ARPA</th>
+                <th>M12 MRR</th>
+                <th>M12 ARR</th>
+                <th>M24 MRR</th>
+                <th>Months to €100k ARR</th>
+                <th>Months to €1M ARR</th>
               </tr>
             </thead>
             <tbody>
-              {first12.map(m => (
-                <tr key={m.month} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-gray-900">{m.month}</td>
-                  <td className="px-3 py-2 font-semibold text-gray-900">€{m.ending_mrr}</td>
-                  <td className="px-3 py-2 text-gray-700">{m.customers}</td>
-                  <td className="px-3 py-2 text-gray-700">{m.closes_needed}</td>
-                  <td className="px-3 py-2 text-gray-700">{m.meetings_needed}</td>
-                  <td className="px-3 py-2 text-gray-700">{m.leads_needed}</td>
-                  <td className="px-3 py-2 text-gray-700">€{m.cash.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-gray-700">{m.runway_months}mo</td>
-                </tr>
-              ))}
+              {scenarios.map((sc) => {
+                const isExpected = sc.name === "Expected";
+                const m12 = sc.months[11];
+                const m24 = sc.months[23];
+                return (
+                  <tr key={sc.name} className={isExpected ? "bg-gray-50" : ""}>
+                    <td className="text-left">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: sc.color }} />
+                        <span className={`font-medium ${isExpected ? "text-gray-900" : "text-gray-700"}`}>{sc.name}</span>
+                        {isExpected && <span className="text-[10px] text-gray-400 font-medium">(base)</span>}
+                      </span>
+                    </td>
+                    <td className="tabular-nums">{(sc.monthly_growth_rate * 100).toFixed(0)}%/mo</td>
+                    <td className="tabular-nums">{sc.churn_rate}%</td>
+                    <td className="tabular-nums">€{sc.arpa}</td>
+                    <td className="tabular-nums font-semibold">€{m12.ending_mrr.toLocaleString()}</td>
+                    <td className="tabular-nums">€{(m12.ending_mrr * 12).toLocaleString()}</td>
+                    <td className="tabular-nums">€{m24.ending_mrr.toLocaleString()}</td>
+                    <td className={`tabular-nums font-semibold ${sc.months_to_100k_arr !== null && sc.months_to_100k_arr <= 18 ? "var-pos" : sc.months_to_100k_arr !== null && sc.months_to_100k_arr <= 24 ? "text-amber-700" : "var-neg"}`}>
+                      {sc.months_to_100k_arr !== null ? sc.months_to_100k_arr : ">24"}
+                    </td>
+                    <td className="tabular-nums text-gray-500">
+                      {sc.months_to_1m_arr !== null ? sc.months_to_1m_arr : ">24"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+      </ExecutiveSection>
 
-      {/* Assumption Cards + Milestones */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Assumptions */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-900 mb-3">Assumptions — {selected}</p>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: "ARPA", value: `€${selectedScenario.arpa}/mo` },
-              { label: "Churn Rate", value: `${selectedScenario.churn_rate}%/mo` },
-              { label: "Monthly Growth", value: `${Math.round(selectedScenario.monthly_growth_rate * 100)}%` },
-              { label: "Closes/Mo Needed", value: String(selectedScenario.new_clients_per_month) },
-            ].map(a => (
-              <div key={a.label} className="rounded-lg bg-gray-50 p-3">
-                <p className="text-xs text-gray-500">{a.label}</p>
-                <p className="text-base font-semibold text-gray-900 mt-0.5">{a.value}</p>
-              </div>
-            ))}
-          </div>
+      {/* 4. Required Inputs Table */}
+      <ExecutiveSection
+        title="Required Monthly Inputs — 12-Month Horizon"
+        subtitle="What must happen in Month 1 to achieve each scenario"
+        right={<SourceOfTruthBadge source="Operating Model (Derived)" status="derived" />}
+      >
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
+            <thead>
+              <tr>
+                <th className="text-left">Scenario</th>
+                <th>Closes/mo</th>
+                <th>Pipeline Needed</th>
+                <th>Meetings Needed</th>
+                <th>Leads Needed</th>
+                <th>Net New MRR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenarios.map((sc) => {
+                const m = sc.months[0];
+                const isExpected = sc.name === "Expected";
+                return (
+                  <tr key={sc.name} className={isExpected ? "bg-gray-50" : ""}>
+                    <td className="text-left">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: sc.color }} />
+                        <span className={isExpected ? "font-semibold text-gray-900" : "text-gray-700"}>{sc.name}</span>
+                      </span>
+                    </td>
+                    <td className="tabular-nums">{m.closes_needed}</td>
+                    <td className="tabular-nums">€{m.pipeline_needed.toLocaleString()}</td>
+                    <td className="tabular-nums">{m.meetings_needed}</td>
+                    <td className="tabular-nums">{m.leads_needed}</td>
+                    <td className={`tabular-nums font-semibold ${m.net_new_mrr >= 0 ? "var-pos" : "var-neg"}`}>
+                      {m.net_new_mrr >= 0 ? "+" : ""}€{m.net_new_mrr.toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+      </ExecutiveSection>
 
-        {/* Milestones */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-900 mb-3">Milestone Timeline</p>
-          <div className="space-y-3">
-            {scenarios.map(sc => (
-              <div key={sc.name} className="flex items-center justify-between text-xs">
-                <span className="font-medium text-gray-700 w-28">{sc.name}</span>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3 w-3 text-amber-500" />
-                    <span className="text-gray-600">€100k ARR:</span>
-                    <span className="font-semibold text-gray-900">
-                      {sc.months_to_100k_arr != null ? `${sc.months_to_100k_arr}mo` : "24+mo"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Users className="h-3 w-3 text-blue-500" />
-                    <span className="text-gray-600">€1M ARR:</span>
-                    <span className="font-semibold text-gray-900">
-                      {sc.months_to_1m_arr != null ? `${sc.months_to_1m_arr}mo` : "24+mo"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* 5. MRR Forecast Chart */}
+      <ExecutiveSection
+        title="MRR Trajectory — 12-Month Forecast"
+        subtitle="All four scenarios overlaid — reference lines at €100k and €500k ARR"
+        right={<SourceOfTruthBadge source="Operating Model (Derived)" status="derived" />}
+      >
+        <div className="board-card p-4">
+          <MultiScenarioAreaChart
+            data={chartData}
+            scenarios={scenarioConfigs}
+            height={280}
+            referenceLines={[
+              { value: 8300,  label: "€100k ARR", color: "#0358F1" },
+              { value: 41700, label: "€500k ARR", color: "#16a34a" },
+            ]}
+          />
         </div>
-      </div>
+      </ExecutiveSection>
+
+      {/* 6. Sensitivity Analysis Table */}
+      <ExecutiveSection
+        title="Forecast Sensitivity Analysis"
+        subtitle="How M12 MRR changes when key assumptions move from base case"
+        right={<SourceOfTruthBadge source="Operating Model (Derived)" status="derived" />}
+      >
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
+            <thead>
+              <tr>
+                <th className="text-left">Assumption</th>
+                <th className="text-left">Value</th>
+                <th>M12 MRR Impact</th>
+                <th className="text-left">Comment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sensitivityRows.map((r, i) => {
+                const isBase = r.value.includes("base");
+                return (
+                  <tr key={i} className={isBase ? "bg-gray-50" : ""}>
+                    <td className="text-left font-medium text-gray-800">{r.assumption}</td>
+                    <td className="text-left text-gray-700">{r.value}</td>
+                    <td className={`tabular-nums font-semibold ${isBase ? "text-gray-900" : r.value.includes("+") ? "var-pos" : "var-neg"}`}>
+                      {r.m12Impact}
+                    </td>
+                    <td className="text-left text-xs text-gray-500">{r.comment}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </ExecutiveSection>
+
+      {/* 7. Cash Runway with Scenarios */}
+      <ExecutiveSection
+        title="Runway Sensitivity"
+        subtitle="Cash runway under each growth scenario — based on seed cash estimate"
+        right={<SourceOfTruthBadge source="Seed / Manual" status="seed" />}
+      >
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
+            <thead>
+              <tr>
+                <th className="text-left">Scenario</th>
+                <th>Net Burn (Mo 1)</th>
+                <th>Runway (current cash)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenarios.map((sc) => {
+                const m1EndingMRR = sc.months[0].ending_mrr;
+                const netBurnSc = Math.max(1, MONTHLY_BURN_ESTIMATE - m1EndingMRR);
+                const runway = CASH_ESTIMATE / netBurnSc;
+                const isExpected = sc.name === "Expected";
+                return (
+                  <tr key={sc.name} className={isExpected ? "bg-gray-50" : ""}>
+                    <td className="text-left">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: sc.color }} />
+                        <span className={isExpected ? "font-semibold text-gray-900" : "text-gray-700"}>{sc.name}</span>
+                      </span>
+                    </td>
+                    <td className={`tabular-nums ${netBurnSc > 6000 ? "var-neg" : "text-amber-700"}`}>
+                      €{netBurnSc.toLocaleString()}
+                    </td>
+                    <td className={`tabular-nums font-semibold ${runway < 4 ? "var-neg" : runway < 6 ? "text-amber-700" : "var-pos"}`}>
+                      {runway.toFixed(1)} mo
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td className="text-left" colSpan={2}>Cash on hand (seed)</td>
+                <td className="tabular-nums">€{CASH_ESTIMATE.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </ExecutiveSection>
+
     </div>
   );
 }

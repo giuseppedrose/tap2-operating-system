@@ -1,267 +1,316 @@
 "use client";
 
-import { Users, DollarSign, TrendingUp, Star, AlertTriangle } from "lucide-react";
 import { calcPartnerPerformance } from "@/lib/operating-model/calculations";
-import { ExecutiveInsight } from "@/components/shared/executive-insight";
-import { DataStatusBadge } from "@/components/shared/data-status-badge";
-import { ChartContainer } from "@/components/charts/ChartContainer";
-import { TAP2_COLORS } from "@/components/charts/chart-theme";
+import { OperatingBrief } from "@/components/operating/OperatingBrief";
+import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
+import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
+import { BridgeChart } from "@/components/analytics/BridgeChart";
+import { OperatingInsight } from "@/components/analytics/OperatingInsight";
+import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
+import type { PartnerPerformance } from "@/lib/operating-model/types";
 
-const GRADE_COLORS: Record<string, string> = {
-  A: "text-green-700 bg-green-50 border-green-200",
-  B: "text-blue-700 bg-blue-50 border-blue-200",
-  C: "text-amber-700 bg-amber-50 border-amber-200",
-  D: "text-red-700 bg-red-50 border-red-200",
-  "Needs Review": "text-gray-600 bg-gray-50 border-gray-200",
+const GRADE_STYLE: Record<string, string> = {
+  A:              "text-emerald-700 bg-emerald-50",
+  B:              "text-blue-700 bg-blue-50",
+  C:              "text-amber-700 bg-amber-50",
+  D:              "text-red-600 bg-red-50",
+  "Needs Review": "text-gray-500 bg-gray-100",
 };
 
-const GRADE_BAR_COLORS: Record<string, string> = {
-  A: "bg-green-500",
-  B: "bg-blue-500",
-  C: "bg-amber-500",
-  D: "bg-red-500",
-  "Needs Review": "bg-gray-400",
-};
+function verdictLabel(p: PartnerPerformance): string {
+  const composite = p.revenue_impact_score * 0.45 + p.conversion_score * 0.35 + p.pipeline_quality_score * 0.20;
+  if (composite >= 60) return "Scale";
+  if (composite >= 35) return "Develop";
+  return "Review";
+}
 
-function ProgressBar({ value, color }: { value: number; color: string }) {
-  return (
-    <div className="h-1.5 w-full rounded-full bg-gray-100">
-      <div
-        className={`h-1.5 rounded-full ${color}`}
-        style={{ width: `${Math.min(100, value)}%` }}
-      />
-    </div>
-  );
+function verdictColor(v: string): string {
+  if (v === "Scale")   return "text-emerald-700";
+  if (v === "Develop") return "text-blue-700";
+  return "text-amber-700";
 }
 
 export default function PartnersPage() {
   const partners = calcPartnerPerformance();
 
-  const totalClosedMRR = partners.reduce((s, p) => s + p.closed_mrr, 0);
-  const totalPipeline = partners.reduce((s, p) => s + p.pipeline_generated, 0);
-  const avgQuality = partners.length
-    ? Math.round(partners.reduce((s, p) => s + p.avg_deal_quality_score, 0) / partners.length)
-    : 0;
+  const totalClosedMRR  = partners.reduce((s, p) => s + p.closed_mrr, 0);
+  const totalPipeline   = partners.reduce((s, p) => s + p.pipeline_generated, 0);
+  const activePartners  = partners.filter(p => p.closed_won > 0 || p.pipeline_generated > 0).length;
+  const staleCount      = partners.reduce((s, p) => s + p.stale_deals, 0);
+  const best            = partners[0];
+  const topByReferral   = partners.find(p => p.best_source === "Referral");
 
-  const gradeCounts = { A: 0, B: 0, C: 0, D: 0, "Needs Review": 0 };
-  partners.forEach(p => { gradeCounts[p.grade]++; });
+  const briefStatus: "on_track" | "behind" | "critical" =
+    best?.grade === "A" ? "on_track" : staleCount > 5 ? "behind" : "on_track";
 
-  const topPartner = partners[0];
-  const staleAlert = partners.filter(p => p.stale_deals > 0);
+  // Bridge rows for partner revenue contribution
+  let running = 0;
+  const bridgeRows = [
+    { label: "Opening", value: 0, type: "opening" as const, running: 0 },
+    ...partners
+      .filter(p => p.closed_mrr > 0)
+      .map(p => {
+        running += p.closed_mrr;
+        return { label: p.name, value: p.closed_mrr, type: "add" as const, running };
+      }),
+    { label: "Total Closed MRR", value: totalClosedMRR, type: "closing" as const, running: totalClosedMRR },
+  ];
 
+  const stalePartners = partners.filter(p => p.stale_deals > 0);
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Partner Performance</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Revenue and conversion by partner/owner</p>
-        </div>
-        <DataStatusBadge status="seed" />
-      </div>
+    <div className="space-y-6 p-6 max-w-[1400px]">
 
-      {/* Executive Insight */}
-      <ExecutiveInsight
-        insight={`${topPartner?.name ?? "—"} leads with €${topPartner?.closed_mrr ?? 0}/mo MRR and a ${topPartner?.grade ?? "—"} grade. ${staleAlert.length > 0 ? `${staleAlert.map(p => p.name).join(", ")} ${staleAlert.length === 1 ? "has" : "have"} stale deals that need immediate follow-up.` : "No stale deals detected across partners."}`}
-        nextStep="Focus coaching on C/D-grade partners and clean stale deals from the pipeline."
+      {/* 1. OperatingBrief */}
+      <OperatingBrief
+        status={briefStatus}
+        headline={`${activePartners} partners active — €${totalClosedMRR.toLocaleString()}/mo closed MRR. Top performer: ${best.name} (€${best.closed_mrr}/mo, Grade ${best.grade}).`}
+        signals={[
+          `Total pipeline generated: €${totalPipeline.toLocaleString()} ARR`,
+          staleCount > 0 ? `${staleCount} stale deals across partners — requires follow-up` : "No stale deals detected",
+          `Avg deal quality: ${Math.round(partners.reduce((s,p) => s+p.avg_deal_quality_score, 0) / partners.length)}/100`,
+        ]}
+        dataLabel="Seed / HubSpot"
       />
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {[
-          { label: "Partners", value: String(partners.length), icon: Users, color: "text-blue-600" },
-          { label: "Closed MRR", value: `€${totalClosedMRR}`, icon: DollarSign, color: "text-green-600" },
-          { label: "Total Pipeline", value: `€${totalPipeline}`, icon: TrendingUp, color: "text-purple-600" },
-          { label: "Avg Quality Score", value: String(avgQuality), icon: Star, color: "text-amber-600" },
-        ].map(kpi => (
-          <div key={kpi.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
-              <span className="text-xs text-gray-500">{kpi.label}</span>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{kpi.value}</p>
-          </div>
-        ))}
-      </div>
+      {/* 2. BoardMetricRow */}
+      <BoardMetricRow>
+        <BoardMetricCard
+          label="Active Partners"
+          value={String(activePartners)}
+          dataStatus="seed"
+          source="HubSpot Seed"
+        />
+        <BoardMetricCard
+          label="Total Closed MRR"
+          value={`€${totalClosedMRR.toLocaleString()}`}
+          dataStatus="seed"
+          source="HubSpot Seed"
+        />
+        <BoardMetricCard
+          label="Total Pipeline"
+          value={`€${totalPipeline.toLocaleString()}`}
+          sub="Gross ARR"
+          dataStatus="seed"
+          source="HubSpot Seed"
+        />
+        <BoardMetricCard
+          label="Stale Deals"
+          value={String(staleCount)}
+          dataStatus="seed"
+          flag={staleCount > 3 ? "Needs Attention" : undefined}
+        />
+      </BoardMetricRow>
 
-      {/* Grade Overview */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-medium text-gray-700">Grade Overview:</span>
-        {(["A", "B", "C", "D", "Needs Review"] as const).map(g => (
-          gradeCounts[g] > 0 ? (
-            <span key={g} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${GRADE_COLORS[g]}`}>
-              {g}: {gradeCounts[g]}
-            </span>
-          ) : null
-        ))}
-      </div>
-
-      {/* Stale Deal Alert */}
-      {staleAlert.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-amber-800">
-            <span className="font-semibold">Stale Deal Alert:</span>{" "}
-            {staleAlert.map(p => `${p.name} (${p.stale_deals} stale)`).join(", ")} — review and follow up immediately.
-          </p>
-        </div>
-      )}
-
-      {/* Partner Cards */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {partners.map(p => (
-          <div key={p.name} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{p.grade_rationale}</p>
-              </div>
-              <span className={`inline-flex items-center justify-center h-10 w-10 rounded-full border-2 text-lg font-bold ${GRADE_COLORS[p.grade]}`}>
-                {p.grade === "Needs Review" ? "?" : p.grade}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
-              <div>
-                <p className="text-gray-400">Closed MRR</p>
-                <p className="font-semibold text-gray-900">€{p.closed_mrr}</p>
-              </div>
-              <div>
-                <p className="text-gray-400">Pipeline</p>
-                <p className="font-semibold text-gray-900">€{p.pipeline_generated}</p>
-              </div>
-              <div>
-                <p className="text-gray-400">Overall Close Rate</p>
-                <p className="font-semibold text-gray-900">{p.overall_close_rate}%</p>
-              </div>
-              <div>
-                <p className="text-gray-400">Avg Cycle</p>
-                <p className="font-semibold text-gray-900">{p.avg_sales_cycle_days}d</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {[
-                { label: "Activity", value: p.activity_score },
-                { label: "Conversion", value: p.conversion_score },
-                { label: "Revenue", value: p.revenue_impact_score },
-                { label: "Quality", value: p.pipeline_quality_score },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div className="flex justify-between text-xs text-gray-500 mb-0.5">
-                    <span>{label}</span>
-                    <span>{value}</span>
-                  </div>
-                  <ProgressBar value={value} color={GRADE_BAR_COLORS[p.grade]} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Activity vs Revenue Comparison */}
-      <ChartContainer
-        title="Activity Score vs Revenue Impact"
-        question="Which partners are high activity but low revenue — and vice versa?"
-        status="seed"
+      {/* 3. Partner Scorecard Table */}
+      <ExecutiveSection
+        title="Partner Performance Scorecard"
+        subtitle="Sorted by closed MRR descending — Grade = revenue impact (45%) + conversion quality (35%) + pipeline health (20%)"
+        note="Grade = composite of revenue impact (45%), conversion quality (35%), pipeline health (20%). Activity alone does not drive grade."
+        right={<SourceOfTruthBadge source="HubSpot (Seed)" status="seed" />}
       >
-        <div className="space-y-1">
-          {/* Legend */}
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: TAP2_COLORS.primary }} />
-              <span className="text-xs text-gray-500">Activity score</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: TAP2_COLORS.success }} />
-              <span className="text-xs text-gray-500">Revenue impact</span>
-            </div>
-          </div>
-          {/* Partner rows */}
-          <div className="space-y-4">
-            {partners.map(p => (
-              <div key={p.name} className="space-y-1.5">
-                <p className="text-xs font-medium text-gray-700">{p.name}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-0.5">
-                      <span>Activity</span>
-                      <span className="font-medium text-gray-600">{p.activity_score}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-gray-100">
-                      <div
-                        className="h-1.5 rounded-full"
-                        style={{ width: `${Math.min(100, p.activity_score)}%`, background: TAP2_COLORS.primary }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-0.5">
-                      <span>Revenue</span>
-                      <span className="font-medium text-gray-600">{p.revenue_impact_score}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-gray-100">
-                      <div
-                        className="h-1.5 rounded-full"
-                        style={{ width: `${Math.min(100, p.revenue_impact_score)}%`, background: TAP2_COLORS.success }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </ChartContainer>
-
-      {/* Partner Detail Table */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-900">Partner Detail</p>
-          <DataStatusBadge status="seed" />
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
             <thead>
-              <tr className="bg-gray-50 text-left">
-                {["Name", "Grade", "Leads", "Meetings", "Demos", "Proposals", "Closed", "MRR", "Conv Rate", "Avg Cycle", "Best Source", "Stale"].map(h => (
-                  <th key={h} className="px-3 py-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>
-                ))}
+              <tr>
+                <th className="text-left">Partner</th>
+                <th>Grade</th>
+                <th>Leads</th>
+                <th>Meetings</th>
+                <th>Demos</th>
+                <th>Closed</th>
+                <th>Close%</th>
+                <th>MRR</th>
+                <th>Avg ARPA</th>
+                <th>Stale</th>
+                <th>Quality</th>
+                <th className="text-left">Grade Rationale</th>
               </tr>
             </thead>
             <tbody>
-              {partners.map(p => (
-                <tr key={p.name} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium text-gray-900">{p.name}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${GRADE_COLORS[p.grade]}`}>
+              {partners.map((p) => (
+                <tr key={p.name}>
+                  <td className="text-left font-medium text-gray-900 whitespace-nowrap">{p.name}</td>
+                  <td>
+                    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold rounded ${GRADE_STYLE[p.grade] ?? "text-gray-500 bg-gray-100"}`}>
                       {p.grade}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-gray-700">{p.leads_owned}</td>
-                  <td className="px-3 py-2 text-gray-700">{p.meetings_booked}</td>
-                  <td className="px-3 py-2 text-gray-700">{p.demos_completed}</td>
-                  <td className="px-3 py-2 text-gray-700">{p.proposals_sent}</td>
-                  <td className="px-3 py-2 text-gray-700">{p.closed_won}</td>
-                  <td className="px-3 py-2 font-semibold text-gray-900">€{p.closed_mrr}</td>
-                  <td className="px-3 py-2 text-gray-700">{p.overall_close_rate}%</td>
-                  <td className="px-3 py-2 text-gray-700">{p.avg_sales_cycle_days}d</td>
-                  <td className="px-3 py-2 text-gray-700">{p.best_source}</td>
-                  <td className="px-3 py-2">
-                    {p.stale_deals > 0 ? (
-                      <span className="text-red-600 font-semibold">{p.stale_deals}</span>
-                    ) : (
-                      <span className="text-green-600">0</span>
-                    )}
+                  <td className="tabular-nums">{p.leads_owned}</td>
+                  <td className="tabular-nums">{p.meetings_booked}</td>
+                  <td className="tabular-nums">{p.demos_completed}</td>
+                  <td className="tabular-nums font-semibold">{p.closed_won}</td>
+                  <td className="tabular-nums">{p.overall_close_rate}%</td>
+                  <td className="tabular-nums font-semibold text-gray-900">€{p.closed_mrr}</td>
+                  <td className="tabular-nums">€{p.avg_deal_size}</td>
+                  <td className={`tabular-nums ${p.stale_deals > 0 ? "var-neg" : "text-gray-400"}`}>
+                    {p.stale_deals}
                   </td>
+                  <td className={`tabular-nums font-semibold ${p.pipeline_quality_score >= 70 ? "var-pos" : p.pipeline_quality_score >= 50 ? "text-amber-700" : "var-neg"}`}>
+                    {p.pipeline_quality_score}
+                  </td>
+                  <td className="text-left text-xs text-gray-500 max-w-[220px]">{p.grade_rationale}</td>
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr>
+                <td className="text-left" colSpan={2}>Total</td>
+                <td className="tabular-nums">{partners.reduce((s,p)=>s+p.leads_owned, 0)}</td>
+                <td className="tabular-nums">{partners.reduce((s,p)=>s+p.meetings_booked, 0)}</td>
+                <td className="tabular-nums">{partners.reduce((s,p)=>s+p.demos_completed, 0)}</td>
+                <td className="tabular-nums">{partners.reduce((s,p)=>s+p.closed_won, 0)}</td>
+                <td className="tabular-nums">—</td>
+                <td className="tabular-nums">€{totalClosedMRR}</td>
+                <td className="tabular-nums">—</td>
+                <td className={`tabular-nums ${staleCount > 0 ? "var-neg" : ""}`}>{staleCount}</td>
+                <td className="tabular-nums">—</td>
+                <td />
+              </tr>
+            </tfoot>
           </table>
         </div>
-      </div>
+      </ExecutiveSection>
+
+      {/* 4. Partner Revenue Bridge */}
+      <ExecutiveSection
+        title="Partner Revenue Bridge"
+        subtitle="Cumulative MRR contribution by partner"
+        right={<SourceOfTruthBadge source="HubSpot (Seed)" status="seed" />}
+      >
+        <BridgeChart
+          title="Partner MRR Contribution — All-Time"
+          rows={bridgeRows}
+          currency
+          note="Seed data. Connect HubSpot deal owner → Stripe customer to replace with live revenue attribution."
+        />
+      </ExecutiveSection>
+
+      {/* 5. Quality vs Activity Comparison */}
+      <ExecutiveSection
+        title="Quality-Adjusted Performance vs Activity Volume"
+        subtitle="Do not rank by activity alone — revenue and conversion quality drive grade"
+        note="Do not rank by activity alone. A partner with 8 quality closes outranks one with 20 low-quality leads."
+        right={<SourceOfTruthBadge source="HubSpot (Seed)" status="seed" />}
+      >
+        <div className="board-card overflow-x-auto">
+          <table className="board-table">
+            <thead>
+              <tr>
+                <th className="text-left">Partner</th>
+                <th>Activity Score</th>
+                <th>Conversion Score</th>
+                <th>Revenue Score</th>
+                <th>Pipeline Quality</th>
+                <th>Stale Deals</th>
+                <th>Overdue</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {partners.map((p) => {
+                const verdict = verdictLabel(p);
+                return (
+                  <tr key={p.name}>
+                    <td className="text-left font-medium text-gray-900">{p.name}</td>
+                    <td className="tabular-nums">{p.activity_score}</td>
+                    <td className="tabular-nums">{p.conversion_score}</td>
+                    <td className="tabular-nums">{p.revenue_impact_score}</td>
+                    <td className={`tabular-nums ${p.pipeline_quality_score >= 70 ? "var-pos" : p.pipeline_quality_score >= 50 ? "text-amber-700" : "var-neg"}`}>
+                      {p.pipeline_quality_score}
+                    </td>
+                    <td className={`tabular-nums ${p.stale_deals > 0 ? "var-neg" : "text-gray-400"}`}>
+                      {p.stale_deals}
+                    </td>
+                    <td className={`tabular-nums ${p.overdue_next_steps > 0 ? "text-amber-700" : "text-gray-400"}`}>
+                      {p.overdue_next_steps}
+                    </td>
+                    <td className={`font-semibold ${verdictColor(verdict)}`}>{verdict}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </ExecutiveSection>
+
+      {/* 6. Stale Deals Table (conditional) */}
+      {stalePartners.length > 0 && (
+        <ExecutiveSection
+          title="Stale Deals by Partner"
+          subtitle="Partners with stale or at-risk pipeline requiring immediate action"
+          right={<SourceOfTruthBadge source="HubSpot (Seed)" status="seed" />}
+        >
+          <div className="board-card overflow-x-auto">
+            <table className="board-table">
+              <thead>
+                <tr>
+                  <th className="text-left">Partner</th>
+                  <th>Stale Deals</th>
+                  <th>Overdue Steps</th>
+                  <th>Pipeline at Risk (ARR)</th>
+                  <th>Grade</th>
+                  <th className="text-left">Recommended Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stalePartners.map((p) => (
+                  <tr key={p.name}>
+                    <td className="text-left font-medium text-gray-900">{p.name}</td>
+                    <td className="tabular-nums var-neg">{p.stale_deals}</td>
+                    <td className="tabular-nums text-amber-700">{p.overdue_next_steps}</td>
+                    <td className="tabular-nums">€{p.pipeline_generated.toLocaleString()}</td>
+                    <td>
+                      <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold rounded ${GRADE_STYLE[p.grade] ?? ""}`}>
+                        {p.grade}
+                      </span>
+                    </td>
+                    <td className="text-left text-xs text-gray-600">
+                      Review stale deals, confirm next steps, set hard close date or move to nurture
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ExecutiveSection>
+      )}
+
+      {/* 7. Operating Insights */}
+      <ExecutiveSection title="Operating Insights" subtitle="Data-derived signals from partner performance model">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <OperatingInsight
+            type="finding"
+            label={`Top Performer: ${best.name}`}
+            body={`${best.name} leads with €${best.closed_mrr}/mo closed MRR and a Grade ${best.grade} rating. Overall close rate: ${best.overall_close_rate}%. Revenue impact score: ${best.revenue_impact_score}/100. This is the highest-converting partner in the portfolio.`}
+            action={`Increase deal volume with ${best.name} — prioritise pipeline handoffs and expand ICP coverage`}
+          />
+          {staleCount > 0 && (
+            <OperatingInsight
+              type="risk"
+              label="Stale Pipeline Risk"
+              body={`${staleCount} stale deals detected across partner portfolio. Stale pipeline decays — each week without activity reduces close probability. Partners with stale deals: ${stalePartners.map(p => p.name).join(", ")}.`}
+              action="Run partner pipeline review this week — set hard deadlines or move to nurture"
+            />
+          )}
+          {topByReferral ? (
+            <OperatingInsight
+              type="opportunity"
+              label={`Referral Signal: ${topByReferral.name}`}
+              body={`${topByReferral.name}'s best source is Referral — indicating network-based deal generation. Referral deals close faster and with higher quality scores. This is a scalable channel if formalised with an incentive structure.`}
+              action={`Formalise referral programme with ${topByReferral.name} — track referred deals and reward closes`}
+            />
+          ) : (
+            <OperatingInsight
+              type="neutral"
+              label="Referral Channel: Underdeveloped"
+              body="No partner is currently generating significant referral-sourced pipeline. Referral deals have the shortest sales cycles and highest quality scores in the current dataset. Activating a formal referral programme could unlock pipeline without incremental outbound effort."
+              action="Design a referral incentive structure and socialise with top 3 partners"
+            />
+          )}
+        </div>
+      </ExecutiveSection>
+
     </div>
   );
 }

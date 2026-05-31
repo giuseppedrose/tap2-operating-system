@@ -1,293 +1,340 @@
 "use client";
 
 import { useState } from "react";
-import { ExecutiveInsight } from "@/components/shared/executive-insight";
-import { DataStatusBadge } from "@/components/shared/data-status-badge";
-import { ChartContainer } from "@/components/charts/ChartContainer";
-import { calcPipeline } from "@/lib/operating-model/calculations";
+import {
+  calcPipeline, REVENUE,
+  getOperatingState, getActionQueue,
+} from "@/lib/operating-model/calculations";
 import { ACTIVE_PIPELINE, CLOSED_LOST } from "@/lib/operating-model/seed";
+import { STAGE_PROBABILITY, STALE_THRESHOLDS } from "@/lib/operating-model/constants";
 import type { Deal, DealHealth } from "@/lib/operating-model/types";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { TAP2_COLORS, axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
-import { AlertTriangle, TrendingUp, GitBranch, DollarSign, Zap } from "lucide-react";
+import { OperatingBrief } from "@/components/operating/OperatingBrief";
+import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
+import { BridgeChart } from "@/components/analytics/BridgeChart";
+import { FunnelTable } from "@/components/analytics/FunnelTable";
+import { ActionRegister } from "@/components/analytics/ActionRegister";
+import type { ActionEntry } from "@/components/analytics/ActionRegister";
+import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
+import { OperatingInsight } from "@/components/analytics/OperatingInsight";
+import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
 
+// ── Computed pipeline state ─────────────────────────────────────────────────────
 const PIPELINE = calcPipeline();
+const TARGET_MRR = 8300;
+const GAP = TARGET_MRR - REVENUE.currentMRR;
+const COVERAGE = Math.round((PIPELINE.weightedMRR / Math.max(1, GAP)) * 100) / 100;
 
-const HEALTH_CONFIG: Record<DealHealth, { color: string; bg: string; border: string; dot: string }> = {
-  "Healthy":         { color: "text-green-700",  bg: "bg-green-50",  border: "border-green-200",  dot: "#16a34a" },
-  "High Intent":     { color: "text-blue-700",   bg: "bg-blue-50",   border: "border-blue-200",   dot: "#0358F1" },
-  "Needs Follow-up": { color: "text-amber-700",  bg: "bg-amber-50",  border: "border-amber-200",  dot: "#d97706" },
-  "Stale":           { color: "text-orange-700", bg: "bg-orange-50", border: "border-orange-200", dot: "#ea580c" },
-  "At Risk":         { color: "text-red-700",    bg: "bg-red-50",    border: "border-red-200",    dot: "#dc2626" },
-  "Low Quality":     { color: "text-gray-600",   bg: "bg-gray-50",   border: "border-gray-200",   dot: "#878787" },
+// ── Funnel table rows ────────────────────────────────────────────────────────────
+function buildFunnelRows() {
+  const stageOrder = [
+    "New Lead","Contacted","Positive Reply","Meeting Booked","Discovery Completed",
+    "Demo Completed","Proposal Sent","Trial / Pilot","Negotiation","Nurture",
+  ];
+  const groups: Record<string, Deal[]> = {};
+  ACTIVE_PIPELINE.forEach(d => {
+    if (!groups[d.deal_stage]) groups[d.deal_stage] = [];
+    groups[d.deal_stage].push(d);
+  });
+
+  return stageOrder.filter(s => groups[s]?.length).map((stage, i, arr) => {
+    const deals = groups[stage] ?? [];
+    const count = deals.length;
+    const value = deals.reduce((s, d) => s + d.amount, 0);
+    const expMRR = deals.reduce((s, d) => s + d.expected_mrr, 0);
+    const wMRR = deals.reduce((s, d) => s + d.weighted_mrr, 0);
+    const staleDeals = deals.filter(d => d.deal_health === "Stale" || d.deal_health === "At Risk");
+    const stalePct = count > 0 ? Math.round((staleDeals.length / count) * 100) : 0;
+    const withDays = deals.filter(d => d.days_in_stage > 0);
+    const avgDays = withDays.length ? Math.round(withDays.reduce((s, d) => s + d.days_in_stage, 0) / withDays.length) : null;
+
+    // Conversion: what % of this stage move to the next visible stage
+    const nextStage = arr[i + 1];
+    const nextCount = nextStage ? (groups[nextStage]?.length ?? 0) : 0;
+    const conversionToNext = nextStage && count > 0 ? Math.round((nextCount / count) * 100) : null;
+
+    return { stage, deals: count, value, expectedMRR: expMRR, weightedMRR: wMRR, conversionToNext, avgDays, stalePct };
+  });
+}
+
+// ── Action register entries ──────────────────────────────────────────────────────
+function buildActionRegister(): ActionEntry[] {
+  const actions = getActionQueue();
+  return actions.slice(0, 10).map(a => ({
+    id: a.deal_id,
+    company: a.company,
+    owner: a.owner,
+    stage: a.stage,
+    mrr: a.mrr,
+    risk: (a.urgency === "now" ? "high" : a.urgency === "this_week" ? "medium" : "low") as "high" | "medium" | "low",
+    nextStep: a.action,
+    dueDate: a.due,
+    urgency: a.urgency,
+  }));
+}
+
+// ── Health badge ────────────────────────────────────────────────────────────────
+const HEALTH_CFG: Record<DealHealth, { color: string; bg: string }> = {
+  "Healthy":         { color: "text-emerald-700", bg: "bg-emerald-50" },
+  "High Intent":     { color: "text-blue-700",    bg: "bg-blue-50" },
+  "Needs Follow-up": { color: "text-amber-700",   bg: "bg-amber-50" },
+  "Stale":           { color: "text-orange-700",  bg: "bg-orange-50" },
+  "At Risk":         { color: "text-red-700",      bg: "bg-red-50" },
+  "Low Quality":     { color: "text-gray-500",     bg: "bg-gray-100" },
 };
 
-function HealthBadge({ health }: { health: DealHealth }) {
-  const cfg = HEALTH_CONFIG[health] ?? HEALTH_CONFIG["Needs Follow-up"];
-  return (
-    <span className={`inline-flex text-xs font-medium border rounded px-2 py-0.5 whitespace-nowrap ${cfg.color} ${cfg.bg} ${cfg.border}`}>
-      {health}
-    </span>
-  );
-}
-
-function QualityDot({ score }: { score: number }) {
-  const color = score >= 80 ? "#16a34a" : score >= 60 ? "#0358F1" : score >= 40 ? "#d97706" : "#dc2626";
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: color }} />
-      <span className="text-xs font-semibold text-gray-700">{score}</span>
-    </span>
-  );
-}
-
-type TableTab = "pipeline" | "attention" | "closing" | "lost";
+type DealTab = "active" | "attention" | "closing" | "lost";
 
 export default function PipelinePage() {
-  const [activeTab, setActiveTab] = useState<TableTab>("pipeline");
-  const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
+  const [tab, setTab] = useState<DealTab>("active");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const tabs: { id: TableTab; label: string; count: number }[] = [
-    { id: "pipeline",  label: "All Pipeline",    count: ACTIVE_PIPELINE.filter(d => d.deal_stage !== "Nurture").length },
-    { id: "attention", label: "Needs Attention", count: PIPELINE.needsAttention.length },
-    { id: "closing",   label: "Closing Soon",    count: PIPELINE.closingThisMonth.length },
-    { id: "lost",      label: "Closed Lost",     count: CLOSED_LOST.length },
-  ];
+  const funnelRows = buildFunnelRows();
+  const actionEntries = buildActionRegister();
 
-  const tableDeals: Deal[] =
-    activeTab === "pipeline"  ? ACTIVE_PIPELINE.filter(d => d.deal_stage !== "Nurture").sort((a,b) => b.expected_mrr - a.expected_mrr) :
-    activeTab === "attention" ? PIPELINE.needsAttention :
-    activeTab === "closing"   ? PIPELINE.closingThisMonth :
+  const tabDeals: Deal[] =
+    tab === "active"    ? ACTIVE_PIPELINE.filter(d => d.deal_stage !== "Nurture" && d.deal_stage !== "New Lead").sort((a,b) => b.expected_mrr - a.expected_mrr) :
+    tab === "attention" ? PIPELINE.needsAttention.sort((a,b) => b.expected_mrr - a.expected_mrr) :
+    tab === "closing"   ? PIPELINE.closingThisMonth.sort((a,b) => b.expected_mrr - a.expected_mrr) :
     CLOSED_LOST;
 
-  const stageBarData = PIPELINE.byStage.map(s => ({
-    stage: s.stage
-      .replace("Discovery Completed", "Discovery")
-      .replace("Demo Completed", "Demo")
-      .replace("Trial / Pilot", "Trial")
-      .replace("Positive Reply", "+Reply")
-      .replace("Meeting Booked", "Meeting"),
-    mrr: s.mrr,
-    weighted: s.weighted_mrr,
-  }));
+  // Lost reasons
+  const lostReasons = Object.entries(PIPELINE.lostReasons).sort((a,b) => b[1].count - a[1].count);
 
-  const lostEntries = Object.entries(PIPELINE.lostReasons).sort((a,b) => b[1].count - a[1].count);
+  // Pipeline coverage bridge
+  const bridgeRows = [
+    { label: "Required MRR gap (€100k ARR target)", value: GAP, type: "opening" as const, running: GAP },
+    { label: "Gross pipeline MRR", value: PIPELINE.expectedMRR, type: "subtract" as const, running: GAP - PIPELINE.expectedMRR },
+    { label: "Risk adjustment (probability discount)", value: PIPELINE.expectedMRR - PIPELINE.weightedMRR, type: "add" as const, running: GAP - PIPELINE.weightedMRR },
+    { label: "Weighted pipeline MRR", value: PIPELINE.weightedMRR, type: "closing" as const, running: GAP - PIPELINE.weightedMRR },
+  ];
 
   return (
     <div className="space-y-6">
-      <ExecutiveInsight
-        insight="HubSpot connection will make all pipeline data live. This cockpit surfaces stale deals, close-risk, source quality, and lost reasons — once HubSpot syncs, every number updates automatically."
-        nextStep="Configure HUBSPOT_ACCESS_TOKEN — all pipeline fields, custom properties, and deal stages are mapped and ready."
+      <OperatingBrief
+        status={COVERAGE >= 1 ? "on_track" : COVERAGE >= 0.5 ? "behind" : "critical"}
+        headline={`Pipeline coverage: ${COVERAGE.toFixed(1)}× weighted MRR vs €100k ARR gap. ${PIPELINE.closingThisMonth.length} deal${PIPELINE.closingThisMonth.length !== 1 ? "s" : ""} in close window. ${PIPELINE.staleCount} stale.`}
+        signals={[
+          `Weighted MRR: €${PIPELINE.weightedMRR}/mo vs €${GAP.toLocaleString()} needed`,
+          `${PIPELINE.dealCount} open deals · €${(PIPELINE.totalGross/1000).toFixed(0)}k gross · €${PIPELINE.weightedMRR}/mo weighted`,
+          PIPELINE.staleCount > 0 ? `${PIPELINE.staleCount} stale deals — €${(PIPELINE.stalePipeline/1000).toFixed(1)}k at risk` : "Pipeline health is clean",
+        ]}
+        dataLabel="Seed data — HubSpot Pending"
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          { label: "Gross Pipeline",    value: `€${(PIPELINE.totalGross/1000).toFixed(0)}k`,    sub: `${PIPELINE.dealCount} open deals`,     icon: <GitBranch className="h-4 w-4" /> },
-          { label: "Weighted Pipeline", value: `€${(PIPELINE.totalWeighted/1000).toFixed(0)}k`, sub: "prob-adjusted ARR",                    icon: <TrendingUp className="h-4 w-4" /> },
-          { label: "Expected MRR",      value: `€${PIPELINE.expectedMRR}`,                      sub: "from open deals",                      icon: <DollarSign className="h-4 w-4" /> },
-          { label: "Weighted MRR",      value: `€${PIPELINE.weightedMRR}`,                      sub: "risk-adjusted",                        icon: <DollarSign className="h-4 w-4" /> },
-          { label: "Stale Pipeline",    value: `€${(PIPELINE.stalePipeline/1000).toFixed(1)}k`, sub: `${PIPELINE.staleCount} deals flagged`,  icon: <AlertTriangle className="h-4 w-4" /> },
-          { label: "Closing Soon",      value: String(PIPELINE.closingThisMonth.length),         sub: "in close window",                      icon: <Zap className="h-4 w-4" /> },
-        ].map(kpi => (
-          <div key={kpi.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide leading-tight">{kpi.label}</p>
-              <span className="text-gray-300">{kpi.icon}</span>
-            </div>
-            <p className="text-xl font-bold text-gray-900">{kpi.value}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{kpi.sub}</p>
-          </div>
-        ))}
+      {/* Key metrics */}
+      <BoardMetricRow>
+        <BoardMetricCard label="Gross Pipeline" value={`€${(PIPELINE.totalGross/1000).toFixed(0)}k`} sub={`${PIPELINE.dealCount} open deals`} dataStatus="seed" source="HubSpot Pending" />
+        <BoardMetricCard label="Weighted Pipeline" value={`€${(PIPELINE.totalWeighted/1000).toFixed(0)}k ARR`} sub={`€${PIPELINE.weightedMRR}/mo`} dataStatus="derived" />
+        <BoardMetricCard label="Pipeline Coverage" value={`${COVERAGE.toFixed(1)}×`} sub="vs €100k ARR gap" dataStatus="derived" flag={COVERAGE < 1 ? "Below 1× — insufficient" : undefined} />
+        <BoardMetricCard label="Stale Pipeline" value={`€${(PIPELINE.stalePipeline/1000).toFixed(1)}k`} sub={`${PIPELINE.staleCount} deals flagged`} dataStatus="derived" flag={PIPELINE.staleCount > 0 ? "Requires action" : undefined} />
+      </BoardMetricRow>
+
+      {/* Operating insights */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <OperatingInsight
+          type={COVERAGE >= 1 ? "opportunity" : "risk"}
+          label="Pipeline Coverage"
+          body={`Weighted pipeline MRR (€${PIPELINE.weightedMRR}/mo) covers ${(COVERAGE * 100).toFixed(0)}% of the €${GAP.toLocaleString()} MRR gap to €100k ARR. ${COVERAGE < 1 ? "Pipeline is insufficient at current conversion rates — top-of-funnel must increase." : "Coverage is adequate if conversion rates hold."}`}
+          action={COVERAGE < 1 ? "Add deals: need €" + Math.round(GAP / 0.35) + "k gross pipeline at 35% conversion to close the gap." : undefined}
+        />
+        {PIPELINE.staleCount > 0 && (
+          <OperatingInsight
+            type="risk"
+            label="Stale Pipeline Risk"
+            body={`${PIPELINE.staleCount} deals have exceeded activity thresholds. €${(PIPELINE.stalePipeline/1000).toFixed(1)}k in gross pipeline is at risk of being lost deals that are not yet marked lost. Inflate gross pipeline figure artificially.`}
+            action="Action stale deals this week. Mark as Nurture or Closed Lost if no response."
+          />
+        )}
+        <OperatingInsight
+          type="finding"
+          label="Win Rate Signal"
+          body={`${PIPELINE.closingThisMonth.length} deals in close window this month. If all close, adds €${PIPELINE.closingThisMonth.reduce((s,d) => s+d.expected_mrr, 0)}/mo MRR. Seed win rate is elevated (historical referral/warm leads) — expect normalization at scale.`}
+        />
+        {Object.keys(PIPELINE.competitors).length > 0 && (
+          <OperatingInsight
+            type="finding"
+            label="Competitive Signal"
+            body={`Competitor mentions in lost deals: ${Object.entries(PIPELINE.competitors).map(([c,n]) => `${c} (${n}×)`).join(", ")}. Stamp It is the primary competitive threat. Integration narrative and faster notification delivery are key differentiators.`}
+          />
+        )}
       </div>
 
-      {PIPELINE.staleCount > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-orange-800">
-              {PIPELINE.staleCount} stale deal{PIPELINE.staleCount > 1 ? "s" : ""} — €{(PIPELINE.stalePipeline/1000).toFixed(1)}k pipeline at risk
-            </p>
-            <p className="text-xs text-orange-700 mt-0.5">
-              These deals have exceeded the no-activity threshold for their stage. See the &quot;Needs Attention&quot; tab.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Pipeline stage funnel table */}
+      <ExecutiveSection
+        title="Pipeline Stage Analysis"
+        subtitle="Deal count, value, and weighted MRR by stage"
+        right={<SourceOfTruthBadge source="HubSpot" status="seed" />}
+        note="Weighted MRR = expected_mrr × stage probability. Coverage ratio = weighted pipeline MRR / MRR gap to €100k ARR."
+      >
+        <FunnelTable
+          rows={funnelRows}
+          footerNote={`Pipeline coverage ratio: ${COVERAGE.toFixed(2)}× weighted MRR vs required. Target: ≥3× for comfortable coverage.`}
+        />
+      </ExecutiveSection>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartContainer title="Pipeline by Stage" question="Where does pipeline get stuck?" status="seed" statusIntegration="HubSpot Pending">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={stageBarData} margin={{ top: 4, right: 4, bottom: 48, left: 0 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="stage" {...axisStyle} angle={-35} textAnchor="end" interval={0} />
-              <YAxis {...axisStyle} tickFormatter={(v: number) => `€${v}`} />
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`€${String(v)}`, "MRR"]} />
-              <Bar dataKey="mrr" fill={TAP2_COLORS.primary} radius={[4,4,0,0]} name="Expected MRR" />
-              <Bar dataKey="weighted" fill={TAP2_COLORS.muted} radius={[4,4,0,0]} name="Weighted MRR" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
+      {/* Pipeline coverage bridge */}
+      <ExecutiveSection
+        title="Pipeline Coverage Bridge"
+        subtitle="How current pipeline maps to the €100k ARR milestone"
+        right={<SourceOfTruthBadge source="Derived" status="derived" />}
+      >
+        <BridgeChart
+          title="MRR GAP → PIPELINE COVERAGE ANALYSIS"
+          rows={bridgeRows}
+          note="Coverage < 1× means weighted pipeline is insufficient even if all deals close. Industry standard: maintain ≥3× pipeline coverage at top of funnel."
+        />
+      </ExecutiveSection>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-900 mb-1">Deal Health Distribution</p>
-          <p className="text-xs text-blue-600 mb-4">Is pipeline quality improving or degrading?</p>
-          <div className="space-y-2.5">
-            {PIPELINE.byHealth.map(h => {
-              const cfg = HEALTH_CONFIG[h.health as DealHealth] ?? { dot: "#878787", color: "text-gray-600" };
-              return (
-                <div key={h.health} className="flex items-center gap-3">
-                  <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: cfg.dot }} />
-                  <span className={`w-36 text-xs font-medium ${cfg.color}`}>{h.health}</span>
-                  <div className="flex-1">
-                    <div className="h-2 rounded-full bg-gray-100">
-                      <div className="h-2 rounded-full" style={{
-                        width: `${Math.min(100, (h.count / Math.max(1, PIPELINE.dealCount)) * 100)}%`,
-                        background: cfg.dot,
-                      }} />
-                    </div>
-                  </div>
-                  <span className="w-6 text-right text-xs font-bold text-gray-700">{h.count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      {/* Founder attention register */}
+      <ExecutiveSection
+        title="Founder Attention Register"
+        subtitle="Deals requiring action, ranked by urgency and MRR at stake"
+        right={<SourceOfTruthBadge source="HubSpot" status="seed" />}
+      >
+        <ActionRegister entries={actionEntries} title="" />
+      </ExecutiveSection>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-900 mb-1">Pipeline by Source</p>
-          <p className="text-xs text-blue-600 mb-4">Which channel creates the most qualified pipeline?</p>
-          <div className="space-y-2.5">
-            {PIPELINE.bySource.slice(0, 8).map(s => (
-              <div key={s.label} className="flex items-center gap-3">
-                <span className="w-32 text-xs text-gray-600 truncate">{s.label}</span>
-                <div className="flex-1">
-                  <div className="h-2 rounded-full bg-gray-100">
-                    <div className="h-2 rounded-full" style={{
-                      width: `${Math.min(100, (s.mrr / Math.max(1, PIPELINE.expectedMRR)) * 100)}%`,
-                      background: TAP2_COLORS.primary,
-                    }} />
-                  </div>
-                </div>
-                <span className="w-12 text-right text-xs font-semibold text-gray-800">€{s.mrr}</span>
-                <span className="w-8 text-right text-xs text-gray-400">{s.count}d</span>
-              </div>
+      {/* Deal table */}
+      <div className="board-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <div className="flex gap-0">
+            {([
+              ["active", "Active Pipeline", ACTIVE_PIPELINE.filter(d => d.deal_stage !== "Nurture" && d.deal_stage !== "New Lead").length],
+              ["attention", "At Risk / Stale", PIPELINE.needsAttention.length],
+              ["closing", "Close Window", PIPELINE.closingThisMonth.length],
+              ["lost", "Closed Lost", CLOSED_LOST.length],
+            ] as const).map(([id, label, count]) => (
+              <button
+                key={id}
+                onClick={() => setTab(id as DealTab)}
+                className={`px-3 py-1.5 text-[11px] font-semibold transition-colors border-b-2 ${
+                  tab === id
+                    ? "border-[#0358F1] text-[#0358F1]"
+                    : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                {label} <span className="ml-1 text-[10px]">{count}</span>
+              </button>
             ))}
           </div>
+          <SourceOfTruthBadge source="HubSpot" status="seed" />
         </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-sm font-semibold text-gray-900 mb-1">Lost Reasons & Competitors</p>
-          <p className="text-xs text-blue-600 mb-4">Which patterns should the sales playbook address?</p>
-          {lostEntries.length > 0 ? (
-            <div className="space-y-2">
-              {lostEntries.map(([reason, data]) => (
-                <div key={reason} className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                  <div className="h-1.5 w-1.5 rounded-full bg-red-400 flex-shrink-0" />
-                  <span className="flex-1 text-xs text-gray-700">{reason}</span>
-                  <span className="text-xs font-semibold text-gray-500">{data.count}×</span>
-                  <span className="text-xs text-red-600">€{data.mrr}/mo</span>
-                </div>
-              ))}
-              {Object.keys(PIPELINE.competitors).length > 0 && (
-                <div className="pt-2 flex flex-wrap gap-2">
-                  {Object.entries(PIPELINE.competitors).map(([c, n]) => (
-                    <span key={c} className="text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded px-2 py-0.5">{c} ({n}×)</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : <p className="text-xs text-gray-400">No closed lost deals yet.</p>}
-        </div>
-      </div>
-
-      {/* Deal Cockpit */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Sales Cockpit</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Health, quality score, and next actions — click any row to expand</p>
-          </div>
-          <DataStatusBadge status="seed" integration="HubSpot Pending" />
-        </div>
-
-        <div className="flex gap-0 px-5 pt-3 border-b border-gray-100 overflow-x-auto">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-xs font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                activeTab === tab.id ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-              <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-gray-100 text-gray-600 text-xs">{tab.count}</span>
-            </button>
-          ))}
-        </div>
-
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[960px]">
-            <thead className="bg-gray-50 border-b border-gray-100">
+          <table className="board-table min-w-[900px]">
+            <thead>
               <tr>
-                {["Company", "Stage", "Owner", "Source", "Use Case", "MRR", "Prob", "W.MRR", "Health", "Quality", "Days", "Close", "Next Step"].map(h => (
-                  <th key={h} className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                ))}
+                <th className="text-left">Company</th>
+                <th className="text-left">Stage</th>
+                <th className="text-left">Owner</th>
+                <th className="text-left">Source</th>
+                <th>MRR</th>
+                <th>Prob.</th>
+                <th>W. MRR</th>
+                <th>Quality</th>
+                <th>Health</th>
+                <th>Days</th>
+                <th>Close</th>
+                <th className="text-left">Next Step</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
-              {tableDeals.map(deal => (
-                <>
-                  <tr
-                    key={deal.deal_id}
-                    className="hover:bg-gray-50/60 cursor-pointer"
-                    onClick={() => setExpandedDeal(expandedDeal === deal.deal_id ? null : deal.deal_id)}
-                  >
-                    <td className="px-3 py-2.5">
-                      <p className="text-xs font-semibold text-gray-900 whitespace-nowrap">{deal.company_name}</p>
-                      <p className="text-xs text-gray-400">{deal.city}, {deal.country}</p>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{deal.deal_stage}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-600">{deal.owner}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 max-w-[100px] truncate">{deal.source}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 max-w-[100px] truncate">{deal.use_case}</td>
-                    <td className="px-3 py-2.5 text-right text-xs font-semibold text-gray-800">€{deal.expected_mrr}</td>
-                    <td className="px-3 py-2.5 text-right text-xs text-gray-500">{deal.probability}%</td>
-                    <td className="px-3 py-2.5 text-right text-xs font-medium" style={{ color: TAP2_COLORS.primary }}>€{deal.weighted_mrr}</td>
-                    <td className="px-3 py-2.5"><HealthBadge health={deal.deal_health} /></td>
-                    <td className="px-3 py-2.5"><QualityDot score={deal.quality_score} /></td>
-                    <td className="px-3 py-2.5 text-right text-xs text-gray-500">{deal.days_in_stage}d</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{deal.expected_close_month}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 max-w-[160px] truncate">{deal.next_step}</td>
-                  </tr>
-                  {expandedDeal === deal.deal_id && (
-                    <tr key={`${deal.deal_id}-exp`}>
-                      <td colSpan={13} className="px-4 py-3 bg-blue-50/40 border-b border-blue-100">
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
-                          <div><span className="text-gray-400">Segment: </span><span className="text-gray-700">{deal.segment}</span></div>
-                          <div><span className="text-gray-400">Industry: </span><span className="text-gray-700">{deal.industry}</span></div>
-                          <div><span className="text-gray-400">Sales cycle: </span><span className="text-gray-700">{deal.sales_cycle_days}d total</span></div>
-                          <div><span className="text-gray-400">Campaign: </span><span className="text-gray-700">{deal.campaign_name ?? "—"}</span></div>
-                          {deal.objections.length > 0 && (
-                            <div className="sm:col-span-2"><span className="text-gray-400">Objections: </span><span className="text-amber-700">{deal.objections.join(" · ")}</span></div>
-                          )}
-                          {deal.competitor && <div><span className="text-gray-400">Competitor: </span><span className="text-red-600">{deal.competitor}</span></div>}
-                          {deal.lost_reason && <div><span className="text-gray-400">Lost reason: </span><span className="text-red-600">{deal.lost_reason}</span></div>}
-                          <div className="sm:col-span-4"><span className="text-gray-400">Notes: </span><span className="text-gray-600 italic">{deal.notes}</span></div>
+            <tbody>
+              {tabDeals.map(deal => {
+                const hcfg = HEALTH_CFG[deal.deal_health] ?? HEALTH_CFG["Needs Follow-up"];
+                return (
+                  <>
+                    <tr
+                      key={deal.deal_id}
+                      className="cursor-pointer hover:bg-gray-50/60"
+                      onClick={() => setExpanded(expanded === deal.deal_id ? null : deal.deal_id)}
+                    >
+                      <td className="text-left">
+                        <p className="text-xs font-semibold text-gray-900">{deal.company_name}</p>
+                        <p className="text-[10px] text-gray-400">{deal.city}, {deal.country}</p>
+                      </td>
+                      <td className="text-left text-xs text-gray-600 whitespace-nowrap">{deal.deal_stage}</td>
+                      <td className="text-left text-xs text-gray-500">{deal.owner}</td>
+                      <td className="text-left text-xs text-gray-400 max-w-[90px] truncate">{deal.source}</td>
+                      <td className="font-semibold text-[#0358F1]">€{deal.expected_mrr}</td>
+                      <td className="text-gray-500">{deal.probability}%</td>
+                      <td className="font-semibold text-gray-700">€{deal.weighted_mrr}</td>
+                      <td>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <div className="h-1 w-8 rounded-full bg-gray-100">
+                            <div className="h-1 rounded-full bg-[#0358F1]" style={{ width: `${deal.quality_score}%` }} />
+                          </div>
+                          <span className="text-[11px] text-gray-500">{deal.quality_score}</span>
                         </div>
                       </td>
+                      <td>
+                        <span className={`inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${hcfg.color} ${hcfg.bg}`}>
+                          {deal.deal_health}
+                        </span>
+                      </td>
+                      <td className="text-gray-500">{deal.days_in_stage}d</td>
+                      <td className="text-gray-500 whitespace-nowrap text-[11px]">{deal.expected_close_month}</td>
+                      <td className="text-left text-xs text-gray-500 max-w-[140px] truncate">{deal.next_step}</td>
                     </tr>
-                  )}
-                </>
-              ))}
+                    {expanded === deal.deal_id && (
+                      <tr key={`${deal.deal_id}-x`}>
+                        <td colSpan={12} className="px-4 py-3 bg-gray-50/60 border-b border-gray-100">
+                          <div className="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-4 text-[11px]">
+                            <span><span className="text-gray-400">Segment: </span>{deal.segment}</span>
+                            <span><span className="text-gray-400">Use case: </span>{deal.use_case}</span>
+                            <span><span className="text-gray-400">Cycle: </span>{deal.sales_cycle_days}d total</span>
+                            <span><span className="text-gray-400">Campaign: </span>{deal.campaign_name ?? "—"}</span>
+                            {deal.objections.length > 0 && <span className="col-span-2"><span className="text-gray-400">Objections: </span><span className="text-amber-700">{deal.objections.join(" · ")}</span></span>}
+                            {deal.competitor && <span><span className="text-gray-400">Competitor: </span><span className="text-red-600">{deal.competitor}</span></span>}
+                            {deal.lost_reason && <span><span className="text-gray-400">Lost reason: </span><span className="text-red-600">{deal.lost_reason}</span></span>}
+                            <span className="col-span-4 text-gray-500 italic">{deal.notes}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
             </tbody>
           </table>
         </div>
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
-          <p className="text-xs text-gray-400">Seed data only — connect HubSpot to replace with live CRM. Quality: 80+ green · 60–79 blue · 40–59 amber · &lt;40 red.</p>
+        <div className="px-4 py-2 border-t border-gray-100">
+          <p className="text-[10px] text-gray-400 italic">Quality score: A ≥80 · B 60–79 · C 40–59 · D &lt;40. Stale thresholds: Contacted &gt;7d · Proposal &gt;10d · Trial &gt;14d · Negotiation &gt;7d.</p>
         </div>
       </div>
+
+      {/* Lost reasons + competitors */}
+      {lostReasons.length > 0 && (
+        <ExecutiveSection
+          title="Loss Analysis"
+          subtitle="Win/loss post-mortem — patterns to address in sales playbook"
+          right={<SourceOfTruthBadge source="HubSpot" status="seed" />}
+        >
+          <div className="board-card overflow-hidden">
+            <table className="board-table">
+              <thead><tr>
+                <th className="text-left">Lost Reason</th>
+                <th>Deals</th>
+                <th>MRR Lost/mo</th>
+                <th className="text-left">Competitors Mentioned</th>
+              </tr></thead>
+              <tbody>
+                {lostReasons.map(([reason, data]) => (
+                  <tr key={reason}>
+                    <td className="text-left">{reason}</td>
+                    <td>{data.count}</td>
+                    <td className="text-red-600 font-semibold">€{data.mrr}</td>
+                    <td className="text-left">
+                      {Object.entries(PIPELINE.competitors)
+                        .filter(([c]) => CLOSED_LOST.some(d => d.lost_reason === reason && d.competitor === c))
+                        .map(([c]) => <span key={c} className="text-[11px] text-red-500 mr-2">{c}</span>)
+                        || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ExecutiveSection>
+      )}
     </div>
   );
 }
