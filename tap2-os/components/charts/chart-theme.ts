@@ -1,42 +1,64 @@
+// Tap2 Chart Theme — Stripe-quality, minimal, high-precision
+
 export const TAP2_COLORS = {
-  primary: "#0358F1",
-  secondary: "#333333",
-  muted: "#878787",
-  grid: "#DADADA",
-  background: "#FFFFFF",
-  cardBg: "#F5F5F5",
-  lightGray: "#DADADA",
-  mediumGray: "#878787",
-  darkGray: "#333333",
-  success: "#16a34a",
-  warning: "#d97706",
-  danger: "#dc2626",
+  primary:   "#0358F1",
+  secondary: "#1a1a2e",
+  muted:     "#94a3b8",
+  grid:      "#f1f5f9",
+  gridLine:  "#e2e8f0",
+  background: "#ffffff",
+  cardBg:    "#f8fafc",
+  success:   "#10b981",
+  warning:   "#f59e0b",
+  danger:    "#ef4444",
+  text:      "#0f172a",
+  textMuted: "#64748b",
 };
 
 export const SERIES_COLORS = [
-  TAP2_COLORS.primary,
-  TAP2_COLORS.secondary,
-  TAP2_COLORS.muted,
-  "#5B8BF5",
-  "#A0B4F9",
+  "#0358F1",
+  "#06b6d4",
+  "#8b5cf6",
+  "#10b981",
+  "#f59e0b",
 ];
 
+// No grid lines — Stripe-style clean
 export const axisStyle = {
-  tick: { fontSize: 11, fill: TAP2_COLORS.muted },
+  tick: { fontSize: 11, fill: "#94a3b8", fontFamily: "Inter, sans-serif" },
   tickLine: false as const,
   axisLine: false as const,
 };
 
-export const tooltipStyle = {
-  contentStyle: {
-    borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    fontSize: 12,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
-  },
+// Invisible grid — only faint horizontal rules
+export const gridStyle = {
+  strokeDasharray: "0" as const,
+  stroke: "#f1f5f9",
+  horizontal: true as const,
+  vertical: false as const,
 };
 
-export const gridStyle = {
-  strokeDasharray: "3 3" as const,
-  stroke: TAP2_COLORS.grid,
+// Premium tooltip
+export const tooltipStyle = {
+  contentStyle: {
+    background: "#0f172a",
+    border: "none",
+    borderRadius: 8,
+    fontSize: 12,
+    color: "#f8fafc",
+    padding: "8px 12px",
+    boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
+    fontFamily: "Inter, sans-serif",
+  },
+  labelStyle: { color: "#94a3b8", fontSize: 11, marginBottom: 4 },
+  cursor: { stroke: "#e2e8f0", strokeWidth: 1 },
+  itemStyle: { color: "#f8fafc" },
+};
+
+// Standard dot style
+export const activeDotStyle = {
+  r: 4,
+  fill: "#0358F1",
+  stroke: "#ffffff",
+  strokeWidth: 2,
 };
