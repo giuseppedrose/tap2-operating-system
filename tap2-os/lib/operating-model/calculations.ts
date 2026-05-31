@@ -461,3 +461,147 @@ export function getInvestorMetrics() {
     months_to_1m_arr: expected.months_to_1m_arr,
   };
 }
+
+// ─── Boardroom operating functions ───────────────────────────────────────────
+
+export type BusinessStatus = 'on_track' | 'behind' | 'critical';
+
+export interface OperatingState {
+  status: BusinessStatus;
+  headline: string;
+  signals: string[];
+}
+
+export interface ActionItem {
+  deal_id: string;
+  company: string;
+  stage: string;
+  mrr: number;
+  owner: string;
+  action: string;
+  due: string;
+  urgency: 'now' | 'this_week' | 'this_month';
+}
+
+export interface MilestoneState {
+  current: number;
+  target: number;
+  targetLabel: string;
+  pct: number;
+  monthsAtCurrentPace: number | null;
+  requiredMonthlyNew: number;
+}
+
+export function getOperatingState(): OperatingState {
+  const mrr = REVENUE.currentMRR;
+  const runway = CASH_ESTIMATE / Math.max(1, MONTHLY_BURN_ESTIMATE - mrr);
+  const pipeline = calcPipeline();
+  const stale = pipeline.staleCount;
+  const target100k = 8300;
+  const pct = mrr / target100k;
+
+  if (runway < 3 || (pct < 0.10 && stale > 3)) {
+    return {
+      status: 'critical',
+      headline: `Critical — ${runway.toFixed(1)} months runway. MRR is ${(pct * 100).toFixed(0)}% of €100k ARR target.`,
+      signals: [
+        `Runway: ${runway.toFixed(1)} months at current burn`,
+        `${stale} stale deals risk ${(pipeline.stalePipeline / 1000).toFixed(1)}k pipeline`,
+        `Need €${(target100k - mrr).toLocaleString()} more MRR for €100k ARR`,
+      ],
+    };
+  }
+
+  if (runway < 6 || pct < 0.30) {
+    return {
+      status: 'behind',
+      headline: `Behind schedule — Runway is ${runway.toFixed(1)} months. €${mrr.toLocaleString()} MRR is ${(pct * 100).toFixed(0)}% of €100k ARR target.`,
+      signals: [
+        `${pipeline.closingThisMonth.length} deal${pipeline.closingThisMonth.length !== 1 ? 's' : ''} expected to close this month`,
+        `Weighted pipeline: €${(pipeline.weightedMRR).toLocaleString()}/mo`,
+        stale > 0 ? `${stale} stale deals need follow-up` : 'Pipeline health is clean',
+      ],
+    };
+  }
+
+  return {
+    status: 'on_track',
+    headline: `On track — €${mrr.toLocaleString()} MRR, ${runway.toFixed(1)} months runway, ${pipeline.closingThisMonth.length} deals closing this month.`,
+    signals: [
+      `${(pct * 100).toFixed(0)}% of the way to €100k ARR`,
+      `${pipeline.closingThisMonth.length} deal${pipeline.closingThisMonth.length !== 1 ? 's' : ''} in close window`,
+      'Runway is comfortable',
+    ],
+  };
+}
+
+export function getActionQueue(): ActionItem[] {
+  const now = new Date('2026-05-31');
+  const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const in30days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  return ACTIVE_PIPELINE
+    .filter(d => !['Nurture', 'Closed Won', 'Closed Lost'].includes(d.deal_stage))
+    .filter(d => d.deal_health !== 'Low Quality')
+    .map(d => {
+      const due = d.next_step_due_date && d.next_step_due_date !== '—' ? new Date(d.next_step_due_date) : null;
+      let urgency: 'now' | 'this_week' | 'this_month' = 'this_month';
+      if (due && due <= in7days) urgency = 'now';
+      else if (d.deal_health === 'High Intent' || d.deal_stage === 'Negotiation') urgency = 'this_week';
+      else if (due && due <= in30days) urgency = 'this_week';
+
+      return {
+        deal_id: d.deal_id,
+        company: d.company_name,
+        stage: d.deal_stage,
+        mrr: d.expected_mrr,
+        owner: d.owner,
+        action: d.next_step,
+        due: d.next_step_due_date,
+        urgency,
+      };
+    })
+    .sort((a, b) => {
+      const order = { now: 0, this_week: 1, this_month: 2 };
+      if (order[a.urgency] !== order[b.urgency]) return order[a.urgency] - order[b.urgency];
+      return b.mrr - a.mrr;
+    })
+    .slice(0, 8);
+}
+
+export function getMilestoneProgress(): MilestoneState {
+  const mrr = REVENUE.currentMRR;
+  const target = 8300; // €100k ARR = €8,300 MRR
+  const pct = Math.min(100, (mrr / target) * 100);
+  const netNewPerMonth = 250; // ~€280 new - €80 churn
+  const monthsAtCurrentPace = netNewPerMonth > 0
+    ? Math.ceil((target - mrr) / netNewPerMonth)
+    : null;
+  const requiredMonthlyNew = Math.ceil((target - mrr) / 12); // to hit in 12 months
+
+  return { current: mrr, target, targetLabel: '€100k ARR', pct, monthsAtCurrentPace, requiredMonthlyNew };
+}
+
+export function getPipelineThisMonth() {
+  return calcPipeline().closingThisMonth.sort((a, b) => b.expected_mrr - a.expected_mrr);
+}
+
+export function getRevenueQualitySignals() {
+  const mrr = REVENUE.currentMRR;
+  const activeClients = REVENUE.activeClients;
+  const arpa = REVENUE.arpa;
+  const growthRate = 12.5; // % MoM
+  const monthlyNewMRR = 280;
+  const churnedMRR = 80;
+  const expansionMRR = 50;
+  const netNew = monthlyNewMRR + expansionMRR - churnedMRR;
+  const churnRate = 2.1;
+  const closedLostCount = CLOSED_LOST.length;
+
+  return {
+    mrr, arpa, growthRate, monthlyNewMRR, churnedMRR, expansionMRR, netNew,
+    churnRate, closedLostCount, activeClients,
+    netBurnRate: MONTHLY_BURN_ESTIMATE - mrr,
+    runway: CASH_ESTIMATE / Math.max(1, MONTHLY_BURN_ESTIMATE - mrr),
+  };
+}

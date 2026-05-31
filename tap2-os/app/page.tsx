@@ -1,252 +1,187 @@
 "use client";
 
-import { KpiCard } from "@/components/shared/kpi-card";
-import { ChartCard } from "@/components/shared/chart-card";
-import { DataTable, type Column } from "@/components/shared/data-table";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { DataSourceBadge } from "@/components/shared/data-source-badge";
-import { ActionItem } from "@/components/shared/action-item";
-import { mockRevenueData } from "@/lib/mock-data/revenue";
-import { mockPipelineData } from "@/lib/mock-data/pipeline";
-import { mockCashData } from "@/lib/mock-data/cash";
-import { mockProductData } from "@/lib/mock-data/product";
-import { mockForecastData } from "@/lib/mock-data/forecast";
 import {
-  CURRENT_MRR, ARR, ACTIVE_CLIENT_COUNT, ARPA,
-  WEEKLY_CHANGES, FOUNDER_ACTIONS,
-} from "@/lib/mock-data/connected";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { DollarSign, Users, GitBranch, Wallet, Cpu, TrendingUp, ArrowUp, ArrowDown, Minus } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
-import { ExecutiveInsight } from "@/components/shared/executive-insight";
+  REVENUE,
+  calcPipeline,
+  getOperatingState,
+  getActionQueue,
+  getMilestoneProgress,
+  getPipelineThisMonth,
+  getRevenueQualitySignals,
+} from "@/lib/operating-model/calculations";
+import { OperatingBrief } from "@/components/operating/OperatingBrief";
+import { ActionQueue } from "@/components/operating/ActionQueue";
+import { MilestoneTracker } from "@/components/operating/MilestoneTracker";
+import { RevenueSignal } from "@/components/operating/RevenueSignal";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
+import { MRRAreaChart } from "@/components/charts/MRRAreaChart";
+import { mockRevenueData } from "@/lib/mock-data/revenue";
+import { MONTHLY_BURN_ESTIMATE, CASH_ESTIMATE } from "@/lib/operating-model/constants";
+import { AlertTriangle, Zap } from "lucide-react";
 
-const BLUE = "#0358F1";
-
-interface Client {
-  id: string;
-  name: string;
-  country: string;
-  mrr: number;
-  status: string;
-  source: string;
-  partnerOwner: string;
-}
-
-const clientColumns: Column<Client>[] = [
-  { header: "Client", accessor: "name", cell: (row) => <span className="font-medium text-gray-900">{row.name}</span> },
-  { header: "Country", accessor: "country" },
-  { header: "MRR", accessor: "mrr", cell: (row) => <span className="font-semibold text-gray-900">€{row.mrr}</span> },
-  { header: "Status", accessor: "status", cell: (row) => <StatusBadge status={row.status} /> },
-  { header: "Source", accessor: "source" },
-  { header: "Owner", accessor: "partnerOwner" },
-];
+// Computed once at module level — deterministic from seed
+const state = getOperatingState();
+const actions = getActionQueue();
+const milestone = getMilestoneProgress();
+const pipeline = calcPipeline();
+const closingNow = getPipelineThisMonth();
+const revenue = getRevenueQualitySignals();
+const runway = CASH_ESTIMATE / Math.max(1, MONTHLY_BURN_ESTIMATE - REVENUE.currentMRR);
 
 export default function CommandCenter() {
-  const revenueChartData = mockRevenueData.mrrHistory;
-  const activeClients = mockRevenueData.clients.filter((c) => c.status === "active").slice(0, 8);
-
-  // Forecast 12-month ARR from expected scenario
-  const expectedScenario = mockForecastData.scenarios.find((s) => s.name === "Expected")!;
-  const forecastArr12mo = expectedScenario.months[11].expectedArr;
-
-  const weeklyItems = [
-    { label: "MRR Change", value: WEEKLY_CHANGES.mrrChange, prefix: "€", suffix: "" },
-    { label: "New Customers", value: WEEKLY_CHANGES.newCustomers, prefix: "+", suffix: "" },
-    { label: "Lost Customers", value: WEEKLY_CHANGES.lostCustomers, prefix: "", suffix: "" },
-    { label: "Pipeline Change", value: WEEKLY_CHANGES.pipelineChange, prefix: "€", suffix: "" },
-    { label: "Best Partner", value: null, label2: WEEKLY_CHANGES.bestPartner },
-    { label: "Best GTM Source", value: null, label2: WEEKLY_CHANGES.bestGtmSource },
-    { label: "Best Campaign", value: null, label2: WEEKLY_CHANGES.bestCampaign },
-  ];
-
   return (
-    <div className="space-y-6">
-      <ExecutiveInsight
-        insight="The operating system is ready. Live integrations will turn seed data into real-time intelligence. All KPIs below are structured seed data — connect Stripe, HubSpot, Rabobank, and the other integrations to activate live tracking."
-        nextStep="Connect Stripe to make MRR live, then HubSpot for pipeline."
+    <div className="space-y-5">
+
+      {/* 1. Operating state */}
+      <OperatingBrief
+        status={state.status}
+        headline={state.headline}
+        signals={state.signals}
+        dataLabel="Seed data"
       />
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard
-          title="MRR"
-          value={`€${CURRENT_MRR.toLocaleString()}`}
-          trend={14.5}
-          trendLabel="MoM"
-          icon={<DollarSign className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="ARR"
-          value={`€${ARR.toLocaleString()}`}
-          subvalue="annualized"
-          icon={<TrendingUp className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Active Clients"
-          value={ACTIVE_CLIENT_COUNT}
-          trend={8.3}
-          trendLabel="MoM"
-          icon={<Users className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Weighted Pipeline"
-          value={`€${mockPipelineData.weightedPipeline.toLocaleString()}`}
-          subvalue="prob-adjusted"
-          icon={<GitBranch className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Bank Balance"
-          value={`€${mockCashData.bankBalance.toLocaleString()}`}
-          subvalue={`${mockCashData.runway} mo runway`}
-          icon={<Wallet className="h-5 w-5" />}
-        />
-        <KpiCard
-          title="Forecast ARR 12mo"
-          value={`€${forecastArr12mo.toLocaleString()}`}
-          subvalue="expected scenario"
-          icon={<Cpu className="h-5 w-5" />}
-        />
-      </div>
 
-      {/* MRR Waterfall */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-900">MRR Movement</h2>
-          <DataSourceBadge status="mock" />
-        </div>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
-          {[
-            { label: "Previous MRR", value: `€${(mockRevenueData.currentMRR - mockRevenueData.newMRR - mockRevenueData.expansionMRR + mockRevenueData.churnedMRR).toLocaleString()}`, color: "text-gray-900" },
-            { label: "+ New MRR", value: `+€${mockRevenueData.newMRR}`, color: "text-green-600" },
-            { label: "+ Expansion", value: `+€${mockRevenueData.expansionMRR}`, color: "text-blue-600" },
-            { label: "- Churned", value: `-€${mockRevenueData.churnedMRR}`, color: "text-red-500" },
-            { label: "= Net MRR", value: `€${CURRENT_MRR.toLocaleString()}`, color: "text-gray-900" },
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-center">
-              <p className="text-xs text-gray-500 mb-1">{item.label}</p>
-              <p className={`text-lg font-bold ${item.color}`}>{item.value}</p>
+      {/* 2. Three business signals */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Revenue */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Revenue</p>
+          <p className="text-3xl font-semibold tracking-tight text-gray-900">€{REVENUE.currentMRR.toLocaleString()}</p>
+          <p className="text-sm text-gray-400 mt-0.5">MRR · €{REVENUE.arr.toLocaleString()} ARR</p>
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">Active clients</span>
+              <span className="font-medium text-gray-700">{REVENUE.activeClients}</span>
             </div>
-          ))}
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">ARPA</span>
+              <span className="font-medium text-gray-700">€{REVENUE.arpa}/mo</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">MoM growth</span>
+              <span className="font-medium text-emerald-600">+12.5%</span>
+            </div>
+          </div>
+          <div className="mt-3">
+            <DataStatusBadge status="seed" integration="Stripe Pending" />
+          </div>
+        </div>
+
+        {/* Pipeline */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Pipeline</p>
+          <p className="text-3xl font-semibold tracking-tight text-gray-900">€{pipeline.weightedMRR.toLocaleString()}</p>
+          <p className="text-sm text-gray-400 mt-0.5">Weighted MRR · €{(pipeline.totalGross / 1000).toFixed(0)}k gross</p>
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">Closing this month</span>
+              <span className="font-medium text-gray-700">{closingNow.length} deals</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">Open deals</span>
+              <span className="font-medium text-gray-700">{pipeline.dealCount}</span>
+            </div>
+            {pipeline.staleCount > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-amber-600">Stale / at risk</span>
+                <span className="font-medium text-amber-700">{pipeline.staleCount} deals</span>
+              </div>
+            )}
+          </div>
+          <div className="mt-3">
+            <DataStatusBadge status="seed" integration="HubSpot Pending" />
+          </div>
+        </div>
+
+        {/* Cash */}
+        <div className={`rounded-xl border bg-white p-5 ${runway < 4 ? "border-red-200" : runway < 6 ? "border-amber-200" : "border-gray-200"}`}>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Cash & Runway</p>
+          <p className={`text-3xl font-semibold tracking-tight ${runway < 4 ? "text-red-600" : runway < 6 ? "text-amber-600" : "text-gray-900"}`}>
+            {runway.toFixed(1)} mo
+          </p>
+          <p className="text-sm text-gray-400 mt-0.5">€{CASH_ESTIMATE.toLocaleString()} cash · €{MONTHLY_BURN_ESTIMATE.toLocaleString()} burn</p>
+          {runway < 6 && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+              <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+              Below 6-month threshold
+            </div>
+          )}
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">Net burn</span>
+              <span className="font-medium text-gray-700">€{(MONTHLY_BURN_ESTIMATE - REVENUE.currentMRR).toLocaleString()}/mo</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">MRR covering burn</span>
+              <span className="font-medium text-gray-700">{((REVENUE.currentMRR / MONTHLY_BURN_ESTIMATE) * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+          <div className="mt-3">
+            <DataStatusBadge status="manual" integration="Rabobank CSV Pending" />
+          </div>
         </div>
       </div>
 
-      {/* What Changed This Week */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-900">What Changed This Week?</h2>
-          <DataSourceBadge status="mock" />
+      {/* 3. Action queue */}
+      <ActionQueue
+        actions={actions}
+        title="This Week — Deal Actions"
+      />
+
+      {/* 4. Milestone + MRR chart side by side */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <MilestoneTracker milestone={milestone} />
+
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">MRR Trajectory</p>
+            <DataStatusBadge status="seed" integration="Stripe Pending" />
+          </div>
+          <MRRAreaChart
+            data={mockRevenueData.mrrHistory}
+            height={180}
+            referenceValue={8300}
+            referenceLabel="€100k ARR"
+          />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          {weeklyItems.map((item, i) => (
-            <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-xs text-gray-400 mb-2">{item.label}</p>
-              {item.value !== null && item.value !== undefined ? (
-                <div className="flex items-center gap-1">
-                  {item.value > 0 ? (
-                    <ArrowUp className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-                  ) : item.value < 0 ? (
-                    <ArrowDown className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-                  ) : (
-                    <Minus className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                  )}
-                  <span className={`text-base font-bold ${item.value > 0 ? "text-green-600" : item.value < 0 ? "text-red-500" : "text-gray-500"}`}>
-                    {item.prefix}{item.value > 0 ? "+" : ""}{item.value}{item.suffix}
-                  </span>
+      </div>
+
+      {/* 5. Revenue signal */}
+      <RevenueSignal
+        mrr={REVENUE.currentMRR}
+        newMRR={revenue.monthlyNewMRR}
+        expansionMRR={revenue.expansionMRR}
+        churnedMRR={revenue.churnedMRR}
+        growthRate={revenue.growthRate}
+        arpa={REVENUE.arpa}
+        churnRate={revenue.churnRate}
+        activeClients={REVENUE.activeClients}
+      />
+
+      {/* 6. Pipeline closing this month */}
+      {closingNow.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-500" />
+            <p className="text-sm font-semibold text-gray-900">Closing This Month</p>
+            <span className="ml-auto text-xs text-gray-400">
+              €{closingNow.reduce((s, d) => s + d.expected_mrr, 0)}/mo if all close
+            </span>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {closingNow.map(deal => (
+              <div key={deal.deal_id} className="flex items-center gap-4 px-5 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{deal.company_name}</p>
+                  <p className="text-xs text-gray-400 truncate">{deal.next_step}</p>
                 </div>
-              ) : (
-                <p className="text-sm font-semibold text-gray-900 truncate">{item.label2}</p>
-              )}
-            </div>
-          ))}
+                <span className="text-xs text-gray-400 flex-shrink-0">{deal.deal_stage}</span>
+                <span className="text-xs text-gray-500 flex-shrink-0">{deal.owner}</span>
+                <span className="text-sm font-semibold text-[#0358F1] flex-shrink-0">€{deal.expected_mrr}/mo</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-
-      {/* Founder Actions */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-900">Founder Actions</h2>
-          <span className="rounded-full bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5">
-            {FOUNDER_ACTIONS.filter(a => a.priority === 'high').length} urgent
-          </span>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          {FOUNDER_ACTIONS.map((action, i) => (
-            <ActionItem
-              key={i}
-              type={action.type}
-              priority={action.priority}
-              text={action.text}
-              owner={action.owner}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* MRR Trend Chart */}
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-base font-semibold text-gray-900">MRR Trend</h2>
-          <DataSourceBadge status="mock" />
-        </div>
-        <ChartCard title="" description="">
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={revenueChartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="mrrGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={BLUE} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={BLUE} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v) => v.split(" ")[0]}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v) => `€${v}`}
-              />
-              <Tooltip
-                contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
-                formatter={(v: unknown) => [`€${Number(v).toLocaleString()}`, "MRR"]}
-              />
-              <Area
-                type="monotone"
-                dataKey="mrr"
-                stroke={BLUE}
-                strokeWidth={2.5}
-                fill="url(#mrrGradient)"
-                dot={false}
-                activeDot={{ r: 4, fill: BLUE }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-
-      {/* Clients Table */}
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Active Clients</h2>
-          <a href="/revenue" className="text-sm font-medium" style={{ color: BLUE }}>
-            View all →
-          </a>
-        </div>
-        <DataTable columns={clientColumns} data={activeClients} />
-      </div>
+      )}
     </div>
   );
 }
