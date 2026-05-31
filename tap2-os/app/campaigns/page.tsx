@@ -1,17 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { Mail, Calendar, DollarSign, BarChart2, MessageSquare, Send } from "lucide-react";
 import { getCampaignSummary } from "@/lib/operating-model/calculations";
 import { SEED_CAMPAIGNS } from "@/lib/operating-model/seed";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import { ChartContainer } from "@/components/charts/ChartContainer";
-import { TAP2_COLORS, axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
+import { HorizontalRankChart } from "@/components/charts/HorizontalRankChart";
+import { TAP2_COLORS } from "@/components/charts/chart-theme";
 
 const STATUS_COLORS: Record<string, string> = {
   Active: "bg-green-100 text-green-700",
@@ -20,22 +17,77 @@ const STATUS_COLORS: Record<string, string> = {
   Draft: "bg-blue-100 text-blue-700",
 };
 
+interface EngagementRow {
+  name: string;
+  open: number;
+  reply: number;
+  positive: number;
+}
+
+function EngagementRatesTable({ rows }: { rows: EngagementRow[] }) {
+  const metrics = [
+    { key: "open" as const, label: "Open rate", color: TAP2_COLORS.primary },
+    { key: "reply" as const, label: "Reply rate", color: TAP2_COLORS.success },
+    { key: "positive" as const, label: "Positive reply", color: TAP2_COLORS.warning },
+  ];
+
+  return (
+    <div className="w-full">
+      {/* Legend */}
+      <div className="flex items-center gap-4 mb-4">
+        {metrics.map(m => (
+          <div key={m.key} className="flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: m.color }} />
+            <span className="text-xs text-gray-500">{m.label}</span>
+          </div>
+        ))}
+      </div>
+      {/* Rows */}
+      <div className="space-y-4">
+        {rows.map(row => (
+          <div key={row.name} className="space-y-1.5">
+            <p className="text-xs font-medium text-gray-700">{row.name}</p>
+            <div className="grid grid-cols-3 gap-2">
+              {metrics.map(m => (
+                <div key={m.key}>
+                  <div className="flex justify-between text-xs text-gray-400 mb-0.5">
+                    <span>{m.label}</span>
+                    <span className="font-medium text-gray-600">{row[m.key]}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-100">
+                    <div
+                      className="h-1.5 rounded-full"
+                      style={{ width: `${Math.min(100, row[m.key])}%`, background: m.color }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const summary = getCampaignSummary();
 
-  const engagementData = SEED_CAMPAIGNS.map(c => ({
+  const engagementData: EngagementRow[] = SEED_CAMPAIGNS.map(c => ({
     name: c.campaign_name.replace(" Q4 2025", "").replace(" Q1 2026", ""),
     open: c.open_rate,
     reply: c.reply_rate,
     positive: c.positive_reply_rate,
   }));
 
-  const revenueData = SEED_CAMPAIGNS.map(c => ({
-    name: c.campaign_name.replace(" Q4 2025", "").replace(" Q1 2026", ""),
-    pipeline: c.pipeline_generated,
-    mrr: c.closed_mrr,
-  }));
+  const revenueRankData = [...SEED_CAMPAIGNS]
+    .sort((a, b) => b.closed_mrr - a.closed_mrr)
+    .map(c => ({
+      label: c.campaign_name.replace(" Q4 2025", "").replace(" Q1 2026", ""),
+      value: c.closed_mrr,
+      formatted: `€${c.closed_mrr}`,
+    }));
 
   const bestCampaign = [...SEED_CAMPAIGNS].sort((a, b) => b.closed_mrr - a.closed_mrr)[0];
 
@@ -107,34 +159,15 @@ export default function CampaignsPage() {
           question="Which campaign generates the highest engagement quality?"
           status="seed"
         >
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={engagementData} margin={{ top: 4, right: 8, left: 0, bottom: 60 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="name" {...axisStyle} angle={-30} textAnchor="end" interval={0} />
-              <YAxis {...axisStyle} tickFormatter={(v: unknown) => `${String(v)}%`} />
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`${String(v)}%`, ""]} />
-              <Bar dataKey="open" name="Open Rate" fill={TAP2_COLORS.primary} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="reply" name="Reply Rate" fill={TAP2_COLORS.secondary} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="positive" name="Positive Reply" fill={TAP2_COLORS.muted} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <EngagementRatesTable rows={engagementData} />
         </ChartContainer>
 
         <ChartContainer
-          title="Pipeline & Closed MRR by Campaign"
+          title="Closed MRR by Campaign"
           question="Which campaign is generating revenue efficiently?"
           status="seed"
         >
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={revenueData} margin={{ top: 4, right: 8, left: 0, bottom: 60 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="name" {...axisStyle} angle={-30} textAnchor="end" interval={0} />
-              <YAxis {...axisStyle} tickFormatter={(v: unknown) => `€${String(v)}`} />
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`€${String(v)}`, ""]} />
-              <Bar dataKey="pipeline" name="Pipeline" fill={TAP2_COLORS.primary} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="mrr" name="Closed MRR" fill={TAP2_COLORS.secondary} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <HorizontalRankChart data={revenueRankData} />
         </ChartContainer>
       </div>
 

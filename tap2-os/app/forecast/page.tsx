@@ -1,16 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, Legend,
-} from "recharts";
 import { TrendingUp, DollarSign, Users, Clock, Target } from "lucide-react";
 import { calcForecastScenarios, REVENUE } from "@/lib/operating-model/calculations";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import { ChartContainer } from "@/components/charts/ChartContainer";
-import { axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
+import { MultiScenarioAreaChart } from "@/components/charts/MultiScenarioAreaChart";
 
 const SCENARIO_NAMES = ["Conservative", "Expected", "Aggressive", "Investor"] as const;
 type ScenarioName = typeof SCENARIO_NAMES[number];
@@ -108,34 +104,21 @@ export default function ForecastPage() {
         ))}
       </div>
 
-      {/* Multi-line Chart */}
+      {/* Multi-scenario Area Chart */}
       <ChartContainer
         title="MRR Forecast — All Scenarios (24 months)"
         question="When do we reach €100k ARR and €1M ARR?"
         status="seed"
       >
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid {...gridStyle} />
-            <XAxis dataKey="month" {...axisStyle} interval={3} />
-            <YAxis {...axisStyle} tickFormatter={(v: unknown) => `€${String(v)}`} />
-            <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`€${String(v)}`, ""]} />
-            <Legend />
-            <ReferenceLine y={8300} stroke="#d97706" strokeDasharray="4 4" label={{ value: "€100k ARR", fill: "#d97706", fontSize: 10 }} />
-            <ReferenceLine y={83300} stroke="#dc2626" strokeDasharray="4 4" label={{ value: "€1M ARR", fill: "#dc2626", fontSize: 10 }} />
-            {scenarios.map(sc => (
-              <Line
-                key={sc.name}
-                type="monotone"
-                dataKey={sc.name}
-                stroke={sc.color}
-                strokeWidth={sc.name === selected ? 3 : 1.5}
-                dot={false}
-                strokeOpacity={sc.name === selected ? 1 : 0.5}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+        <MultiScenarioAreaChart
+          data={chartData}
+          scenarios={scenarios.map(sc => ({ name: sc.name, color: sc.color }))}
+          height={260}
+          referenceLines={[
+            { value: 8300, label: "€100k ARR", color: "#d97706" },
+            { value: 83300, label: "€1M ARR", color: "#dc2626" },
+          ]}
+        />
       </ChartContainer>
 
       {/* Requirements Table */}

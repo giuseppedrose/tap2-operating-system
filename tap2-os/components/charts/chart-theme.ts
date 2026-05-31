@@ -1,5 +1,7 @@
 // Tap2 Chart Theme — Stripe-quality, minimal, high-precision
 
+export const FONT = '"Inter", ui-sans-serif, system-ui, sans-serif';
+
 export const TAP2_COLORS = {
   primary:   "#0358F1",
   secondary: "#1a1a2e",
@@ -25,7 +27,7 @@ export const SERIES_COLORS = [
 
 // No grid lines — Stripe-style clean
 export const axisStyle = {
-  tick: { fontSize: 11, fill: "#94a3b8", fontFamily: "Inter, sans-serif" },
+  tick: { fontSize: 11, fill: "#94a3b8", fontFamily: FONT },
   tickLine: false as const,
   axisLine: false as const,
 };
@@ -50,9 +52,9 @@ export const tooltipStyle = {
     boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
     fontFamily: "Inter, sans-serif",
   },
-  labelStyle: { color: "#94a3b8", fontSize: 11, marginBottom: 4 },
-  cursor: { stroke: "#e2e8f0", strokeWidth: 1 },
-  itemStyle: { color: "#f8fafc" },
+  labelStyle: { color: "#94a3b8", fontSize: 11, marginBottom: 2, fontFamily: FONT },
+  cursor: { stroke: "#f1f5f9", strokeWidth: 1 },
+  itemStyle: { color: "#f8fafc", fontSize: 12, fontFamily: FONT },
 };
 
 // Standard dot style

@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { Users, DollarSign, TrendingUp, Star, AlertTriangle } from "lucide-react";
 import { calcPartnerPerformance } from "@/lib/operating-model/calculations";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import { ChartContainer } from "@/components/charts/ChartContainer";
-import { TAP2_COLORS, axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
+import { TAP2_COLORS } from "@/components/charts/chart-theme";
 
 const GRADE_COLORS: Record<string, string> = {
   A: "text-green-700 bg-green-50 border-green-200",
@@ -53,11 +49,6 @@ export default function PartnersPage() {
   const topPartner = partners[0];
   const staleAlert = partners.filter(p => p.stale_deals > 0);
 
-  const scoreChartData = partners.map(p => ({
-    name: p.name,
-    activity: p.activity_score,
-    revenue: p.revenue_impact_score,
-  }));
 
   return (
     <div className="space-y-6 p-6">
@@ -170,22 +161,59 @@ export default function PartnersPage() {
         ))}
       </div>
 
-      {/* Activity vs Revenue Chart */}
+      {/* Activity vs Revenue Comparison */}
       <ChartContainer
         title="Activity Score vs Revenue Impact"
         question="Which partners are high activity but low revenue — and vice versa?"
         status="seed"
       >
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={scoreChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-            <CartesianGrid {...gridStyle} />
-            <XAxis dataKey="name" {...axisStyle} />
-            <YAxis {...axisStyle} domain={[0, 100]} />
-            <Tooltip {...tooltipStyle} formatter={(v: unknown) => [String(v), ""]} />
-            <Bar dataKey="activity" name="Activity Score" fill={TAP2_COLORS.primary} radius={[4, 4, 0, 0]} />
-            <Bar dataKey="revenue" name="Revenue Impact" fill={TAP2_COLORS.secondary} radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="space-y-1">
+          {/* Legend */}
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: TAP2_COLORS.primary }} />
+              <span className="text-xs text-gray-500">Activity score</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: TAP2_COLORS.success }} />
+              <span className="text-xs text-gray-500">Revenue impact</span>
+            </div>
+          </div>
+          {/* Partner rows */}
+          <div className="space-y-4">
+            {partners.map(p => (
+              <div key={p.name} className="space-y-1.5">
+                <p className="text-xs font-medium text-gray-700">{p.name}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-0.5">
+                      <span>Activity</span>
+                      <span className="font-medium text-gray-600">{p.activity_score}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-gray-100">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{ width: `${Math.min(100, p.activity_score)}%`, background: TAP2_COLORS.primary }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-0.5">
+                      <span>Revenue</span>
+                      <span className="font-medium text-gray-600">{p.revenue_impact_score}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-gray-100">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{ width: `${Math.min(100, p.revenue_impact_score)}%`, background: TAP2_COLORS.success }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </ChartContainer>
 
       {/* Partner Detail Table */}

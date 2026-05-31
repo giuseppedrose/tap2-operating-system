@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { Users, Calendar, DollarSign, Star } from "lucide-react";
 import { calcGTMSources } from "@/lib/operating-model/calculations";
 import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import { ChartContainer } from "@/components/charts/ChartContainer";
-import { TAP2_COLORS, axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
+import { HorizontalRankChart } from "@/components/charts/HorizontalRankChart";
 import { InsightCard } from "@/components/shared/insight-card";
 
 const REC_COLORS: Record<string, string> = {
@@ -28,14 +24,14 @@ export default function GTMPage() {
   const totalClosedMRR = sources.reduce((s, x) => s + x.closed_mrr, 0);
   const bestSource = sources[0]?.source ?? "—";
 
-  const mrrChartData = [...sources]
+  const mrrRankData = [...sources]
     .sort((a, b) => b.closed_mrr - a.closed_mrr)
-    .map(s => ({ source: s.source, mrr: s.closed_mrr }));
+    .map(s => ({ label: s.source, value: s.closed_mrr, formatted: `€${s.closed_mrr}` }));
 
-  const meetingRateData = sources
+  const meetingRateRankData = sources
     .filter(s => s.leads >= 2)
-    .map(s => ({ source: s.source, rate: s.lead_to_meeting_rate }))
-    .sort((a, b) => b.rate - a.rate);
+    .map(s => ({ label: s.source, value: s.lead_to_meeting_rate, formatted: `${s.lead_to_meeting_rate}%` }))
+    .sort((a, b) => b.value - a.value);
 
   const bestByMRR = sources[0];
   const bestByMeetingRate = [...sources].sort((a, b) => b.lead_to_meeting_rate - a.lead_to_meeting_rate)[0];
@@ -83,15 +79,7 @@ export default function GTMPage() {
           question="Which acquisition source creates the most closed revenue?"
           status="seed"
         >
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={mrrChartData} margin={{ top: 4, right: 8, left: 0, bottom: 44 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="source" {...axisStyle} angle={-30} textAnchor="end" interval={0} />
-              <YAxis {...axisStyle} tickFormatter={(v: unknown) => `€${String(v)}`} />
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`€${String(v)}`, "Closed MRR"]} />
-              <Bar dataKey="mrr" fill={TAP2_COLORS.primary} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <HorizontalRankChart data={mrrRankData} />
         </ChartContainer>
 
         <ChartContainer
@@ -99,15 +87,10 @@ export default function GTMPage() {
           question="Which source has the highest meeting efficiency?"
           status="seed"
         >
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={meetingRateData} margin={{ top: 4, right: 8, left: 0, bottom: 44 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="source" {...axisStyle} angle={-30} textAnchor="end" interval={0} />
-              <YAxis {...axisStyle} tickFormatter={(v: unknown) => `${String(v)}%`} />
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`${String(v)}%`, "L→Meeting Rate"]} />
-              <Bar dataKey="rate" fill={TAP2_COLORS.secondary} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <HorizontalRankChart
+            data={meetingRateRankData}
+            valueFormatter={(v) => `${v}%`}
+          />
         </ChartContainer>
       </div>
 

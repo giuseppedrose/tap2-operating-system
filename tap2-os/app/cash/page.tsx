@@ -6,21 +6,12 @@ import { ExecutiveInsight } from "@/components/shared/executive-insight";
 import { mockCashData, type BankTransaction } from "@/lib/mock-data/cash";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  Legend,
 } from "recharts";
 import { TAP2_COLORS, axisStyle, tooltipStyle, gridStyle } from "@/components/charts/chart-theme";
 import { formatCurrency } from "@/components/charts/formatters";
 import { Wallet, TrendingDown, AlertTriangle, CreditCard, Upload, CheckCircle, Clock } from "lucide-react";
-
-const CATEGORY_COLORS = [
-  TAP2_COLORS.primary,
-  TAP2_COLORS.secondary,
-  TAP2_COLORS.muted,
-  "#5B8BF5",
-  "#A0B4F9",
-  "#d97706",
-  "#94a3b8",
-];
+import { HorizontalRankChart } from "@/components/charts/HorizontalRankChart";
 
 function ConfidenceBadge({ confidence }: { confidence: BankTransaction["confidence"] }) {
   if (confidence === "auto") return (
@@ -198,24 +189,14 @@ export default function CashPage() {
           question="Where is cash being spent?"
           status="seed"
         >
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={mockCashData.expensesByCategory}
-                cx="50%"
-                cy="40%"
-                outerRadius={80}
-                dataKey="amount"
-                nameKey="category"
-              >
-                {mockCashData.expensesByCategory.map((_, i) => (
-                  <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip {...tooltipStyle} formatter={(v: unknown) => [`€${v}`, ""]} />
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-            </PieChart>
-          </ResponsiveContainer>
+          <HorizontalRankChart
+            data={mockCashData.expensesByCategory.map(e => ({
+              label: e.category,
+              value: e.amount,
+              formatted: `€${e.amount}`,
+            }))}
+            height={260}
+          />
         </ChartContainer>
       </div>
 
@@ -226,13 +207,13 @@ export default function CashPage() {
           <DataStatusBadge status="seed" />
         </div>
         <div className="space-y-3">
-          {mockCashData.expensesByCategory.map((cat, i) => (
+          {mockCashData.expensesByCategory.map((cat) => (
             <div key={cat.category} className="flex items-center gap-3">
-              <div className="h-3 w-3 rounded-sm flex-shrink-0" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+              <div className="h-3 w-3 rounded-sm flex-shrink-0" style={{ background: TAP2_COLORS.primary }} />
               <span className="flex-1 text-sm text-gray-700">{cat.category}</span>
               <div className="flex-1 max-w-xs">
                 <div className="h-2 rounded-full bg-gray-100">
-                  <div className="h-2 rounded-full" style={{ width: `${cat.percentage}%`, background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                  <div className="h-2 rounded-full" style={{ width: `${cat.percentage}%`, background: TAP2_COLORS.primary }} />
                 </div>
               </div>
               <span className="w-16 text-right text-sm font-semibold text-gray-900">{formatCurrency(cat.amount)}</span>
