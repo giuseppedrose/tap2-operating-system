@@ -1,188 +1,206 @@
-/**
- * Safe diagnostics endpoint.
- * Checks prerequisites step by step.
- * Never exposes secret values — only configured/missing/error status.
- */
 import { NextRequest, NextResponse } from 'next/server';
 import { ENV, getEnvStatus } from '@/lib/config/env';
 import { createClient } from '@supabase/supabase-js';
+
+export const runtime = 'nodejs';
 
 function checkAuth(req: NextRequest) {
   const s = req.cookies.get('tap2_admin_session');
   return Boolean(s?.value && s.value.length >= 32);
 }
 
-const REQUIRED_TABLES = [
-  'source_sync_runs',
-  'source_data_profiles',
-  'source_field_mappings',
-  'raw_hubspot_deals',
-  'raw_hubspot_companies',
-  'raw_hubspot_contacts',
-  'raw_hubspot_owners',
-  'raw_hubspot_properties',
-  'raw_stripe_customers',
-  'raw_stripe_subscriptions',
-  'raw_instantly_campaigns',
+const KEY_TABLES = [
+  'source_sync_runs', 'source_data_profiles', 'source_field_mappings',
+  'raw_hubspot_companies', 'raw_hubspot_contacts', 'raw_hubspot_deals',
+  'raw_hubspot_owners', 'raw_hubspot_properties',
+  'raw_stripe_customers', 'raw_stripe_subscriptions', 'raw_stripe_invoices',
+  'raw_instantly_campaigns', 'raw_instantly_campaign_analytics', 'raw_instantly_leads',
   'raw_fathom_meetings',
-  'raw_google_calendar_events',
 ];
+
+// Which Vercel custom names map to which standard key
+const VERCEL_NAME_MAP: Record<string, string[]> = {
+  STRIPE_SECRET_KEY:          ['SS', 'STRIPE_SECRET_KEY'],
+  HUBSPOT_ACCESS_TOKEN:       ['Hubspot', 'HUBSPOT_ACCESS_TOKEN'],
+  INSTANTLY_API_KEY:          ['instantl', 'instantly', 'INSTANTLY_API_KEY'],
+  FATHOM_API_KEY:             ['Fathom', 'FATHOM_API_KEY'],
+  SUPABASE_SERVICE_ROLE_KEY:  ['SUPABASE_SERVICE_ROLE_KEY'],
+  ADMIN_USERNAME:             ['ADMIN_USERNAME'],
+  ADMIN_PASSWORD:             ['ADMIN_PASSWORD'],
+};
 
 export async function GET(req: NextRequest) {
   if (!checkAuth(req)) {
-    return NextResponse.json({
-      error_code: 'auth_required',
-      message: 'Admin session cookie missing or invalid. Log in at /admin/login.',
-    }, { status: 401 });
+    return NextResponse.json({ error_code: 'auth_required', message: 'Log in at /admin/login first.' }, { status: 401 });
   }
 
-  const results: Record<string, unknown> = {};
+  const issues: string[] = [];
 
-  // ── 1. ENV var presence ────────────────────────────────────────────────────
+  // ── Env var status ──────────────────────────────────────────────────────
   const envStatus = getEnvStatus();
-  results.env_vars = {
-    SUPABASE_SERVICE_ROLE_KEY: envStatus.SUPABASE_SERVICE_ROLE_KEY,
-    HUBSPOT_ACCESS_TOKEN:      envStatus.HUBSPOT_ACCESS_TOKEN,
-    STRIPE_SECRET_KEY:         envStatus.STRIPE_SECRET_KEY,
-    INSTANTLY_API_KEY:         envStatus.INSTANTLY_API_KEY,
-    FATHOM_API_KEY:            envStatus.FATHOM_API_KEY,
-    GOOGLE_CLIENT_ID:          envStatus.GOOGLE_CLIENT_ID,
-    ANTHROPIC_API_KEY:         envStatus.ANTHROPIC_API_KEY,
-    ADMIN_USERNAME:            envStatus.ADMIN_USERNAME,
-    ADMIN_PASSWORD:            envStatus.ADMIN_PASSWORD,
-  };
 
-  // Also check which Vercel custom names resolved
-  results.vercel_name_resolution = {
-    stripe:    process.env.SS ? 'SS → resolved' : (process.env.STRIPE_SECRET_KEY ? 'STRIPE_SECRET_KEY → resolved' : 'not found'),
-    hubspot:   process.env.Hubspot ? 'Hubspot → resolved' : (process.env.HUBSPOT_ACCESS_TOKEN ? 'HUBSPOT_ACCESS_TOKEN → resolved' : 'not found'),
-    instantly: process.env.instantl ? 'instantl → resolved' : (process.env.instantly ? 'instantly → resolved' : (process.env.INSTANTLY_API_KEY ? 'INSTANTLY_API_KEY → resolved' : 'not found')),
-    fathom:    process.env.Fathom ? 'Fathom → resolved' : (process.env.FATHOM_API_KEY ? 'FATHOM_API_KEY → resolved' : 'not found'),
-    google_id: process.env.ClientIDgoogle ? 'ClientIDgoogle → resolved' : (process.env.GOOGLE_CLIENT_ID ? 'GOOGLE_CLIENT_ID → resolved' : 'not found'),
-    anthropic: process.env.AnthropicClaudeKey ? 'AnthropicClaudeKey → resolved' : (process.env.ANTHROPIC_API_KEY ? 'ANTHROPIC_API_KEY → resolved' : 'not found'),
-  };
-
-  // ── 2. Supabase admin connection ───────────────────────────────────────────
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = ENV.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    results.supabase = {
-      error_code: 'missing_env_var',
-      message: !supabaseUrl ? 'NEXT_PUBLIC_SUPABASE_URL missing' : 'SUPABASE_SERVICE_ROLE_KEY missing',
-    };
-  } else {
-    try {
-      const sb = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-
-      // Test read access (no writes in diagnostics)
-      const { error: pingError } = await sb
-        .from('source_sync_runs')
-        .select('id')
-        .limit(1);
-
-      if (pingError) {
-        const code = pingError.message?.includes('relation') || pingError.code === '42P01'
-          ? 'missing_table'
-          : pingError.message?.includes('permission') || pingError.code === '42501'
-          ? 'rls_permission_denied'
-          : 'supabase_error';
-        results.supabase = {
-          error_code: code,
-          message: pingError.message,
-          hint: code === 'missing_table'
-            ? 'Run supabase/migrations/20260601000000_phase9_raw_sources.sql in Supabase SQL Editor'
-            : code === 'rls_permission_denied'
-            ? 'Service role key should bypass RLS — check the key is the service_role key, not anon key'
-            : 'Unexpected Supabase error',
-        };
-      } else {
-        results.supabase = { status: 'ok', message: 'source_sync_runs readable with service role' };
-      }
-
-      // ── 3. Table existence check ─────────────────────────────────────────
-      const tableChecks: Record<string, string> = {};
-      for (const table of REQUIRED_TABLES) {
-        const { error: tErr } = await sb.from(table).select('id').limit(0);
-        tableChecks[table] = tErr
-          ? (tErr.code === '42P01' ? 'missing' : `error: ${tErr.code}`)
-          : 'exists';
-      }
-      results.table_check = tableChecks;
-      const missingTables = Object.entries(tableChecks).filter(([, v]) => v === 'missing').map(([k]) => k);
-      results.missing_tables = missingTables;
-
-    } catch (err) {
-      results.supabase = {
-        error_code: 'supabase_error',
-        message: err instanceof Error ? err.message : 'Connection failed',
-      };
+  // Which Vercel name each key resolved from
+  const vercelNameResolution: Record<string, string> = {};
+  for (const [stdKey, candidates] of Object.entries(VERCEL_NAME_MAP)) {
+    const resolved = candidates.find(name => Boolean(process.env[name]));
+    vercelNameResolution[stdKey] = resolved ? `resolved from ${resolved}` : 'NOT FOUND';
+    if (!resolved && ['STRIPE_SECRET_KEY', 'HUBSPOT_ACCESS_TOKEN', 'SUPABASE_SERVICE_ROLE_KEY', 'ADMIN_USERNAME', 'ADMIN_PASSWORD'].includes(stdKey)) {
+      issues.push(`${stdKey} missing — tried: ${candidates.join(', ')}`);
     }
   }
 
-  // ── 4. HubSpot lightweight ping (no writes, no data stored) ───────────────
-  const hsToken = ENV.HUBSPOT_ACCESS_TOKEN;
-  if (!hsToken) {
-    results.hubspot_ping = { error_code: 'missing_env_var', message: 'HUBSPOT_ACCESS_TOKEN / Hubspot not configured' };
+  // ── Supabase connectivity ────────────────────────────────────────────────
+  let supabaseResult: Record<string, unknown> = { status: 'skipped', message: 'Service role key not configured' };
+  const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const sbKey = ENV.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (sbUrl && sbKey) {
+    try {
+      const sb = createClient(sbUrl, sbKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { error } = await sb.from('source_sync_runs').select('id').limit(0);
+      if (error) {
+        const code = error.code === '42P01' ? 'missing_table' : error.code === '42501' ? 'rls_permission_denied' : 'supabase_error';
+        supabaseResult = { status: 'error', error_code: code, message: error.message };
+        issues.push(`Supabase ${code}: ${error.message}`);
+      } else {
+        supabaseResult = { status: 'ok', message: 'Connected — service role key valid' };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      supabaseResult = { status: 'error', error_code: 'supabase_error', message: msg };
+      issues.push(`Supabase connection failed: ${msg}`);
+    }
   } else {
+    if (!sbUrl) issues.push('NEXT_PUBLIC_SUPABASE_URL missing');
+    if (!sbKey) issues.push('SUPABASE_SERVICE_ROLE_KEY missing');
+  }
+
+  // ── Table existence check ────────────────────────────────────────────────
+  const tableCheck: Record<string, string> = {};
+  const missingTables: string[] = [];
+  if (sbUrl && sbKey && supabaseResult.status === 'ok') {
+    const sb = createClient(sbUrl, sbKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    await Promise.all(KEY_TABLES.map(async (t) => {
+      const { error } = await sb.from(t).select('id').limit(0);
+      if (error?.code === '42P01') {
+        tableCheck[t] = 'missing';
+        missingTables.push(t);
+      } else if (error) {
+        tableCheck[t] = `error: ${error.code}`;
+      } else {
+        tableCheck[t] = 'exists';
+      }
+    }));
+    if (missingTables.length > 0) {
+      issues.push(`${missingTables.length} table(s) missing — run Phase 9 migration in Supabase SQL Editor: ${missingTables.slice(0, 3).join(', ')}${missingTables.length > 3 ? '…' : ''}`);
+    }
+  }
+
+  // ── HubSpot API ping ─────────────────────────────────────────────────────
+  let hubspotPing: Record<string, unknown> = { status: 'skipped', message: 'HubSpot token not configured' };
+  const hsToken = ENV.HUBSPOT_ACCESS_TOKEN;
+  if (hsToken) {
     try {
       const res = await fetch('https://api.hubapi.com/crm/v3/owners?limit=1', {
         headers: { Authorization: `Bearer ${hsToken}` },
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
-        const data = await res.json() as Record<string, unknown>;
-        results.hubspot_ping = {
-          status: 'ok',
-          message: `HubSpot API reachable. ${(data.results as unknown[])?.length ?? 0} owner(s) returned.`,
-          http_status: res.status,
-        };
+        hubspotPing = { status: 'ok', message: 'HubSpot API reachable — token valid' };
       } else {
-        const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-        const code = res.status === 401 ? 'invalid_api_key'
-          : res.status === 403 ? 'insufficient_api_scope'
-          : 'upstream_api_error';
-        results.hubspot_ping = {
-          error_code: code,
-          http_status: res.status,
-          message: code === 'invalid_api_key'
-            ? 'HubSpot returned 401 — API token is invalid or expired. Check Hubspot env var.'
-            : code === 'insufficient_api_scope'
-            ? 'HubSpot returned 403 — token lacks required scopes (needs crm.objects.deals.read)'
-            : `HubSpot returned ${res.status}`,
-          hubspot_category: (body.category as string) ?? undefined,
-        };
+        const code = res.status === 401 ? 'invalid_api_key' : res.status === 403 ? 'insufficient_api_scope' : 'upstream_api_error';
+        hubspotPing = { status: 'error', error_code: code, http_status: res.status, message: `HubSpot returned ${res.status}` };
+        issues.push(`HubSpot ${code}: HTTP ${res.status}`);
       }
     } catch (err) {
-      results.hubspot_ping = {
-        error_code: 'upstream_api_error',
-        message: `Network error reaching HubSpot: ${err instanceof Error ? err.message : 'unknown'}`,
-      };
+      const msg = err instanceof Error ? err.message : 'unknown';
+      hubspotPing = { status: 'error', error_code: 'upstream_api_error', message: `Network error: ${msg}` };
+      issues.push(`HubSpot ping failed: ${msg}`);
     }
   }
 
-  // ── 5. Auth cookie check ───────────────────────────────────────────────────
-  const cookie = req.cookies.get('tap2_admin_session');
-  results.auth = {
-    cookie_present: Boolean(cookie?.value),
-    cookie_length: cookie?.value?.length ?? 0,
-    valid: Boolean(cookie?.value && cookie.value.length >= 32),
+  // ── Stripe API ping ──────────────────────────────────────────────────────
+  let stripePing: Record<string, unknown> = { status: 'skipped', message: 'Stripe key not configured' };
+  const stripeKey = ENV.STRIPE_SECRET_KEY;
+  if (stripeKey) {
+    try {
+      const res = await fetch('https://api.stripe.com/v1/customers?limit=1', {
+        headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        stripePing = { status: 'ok', message: 'Stripe API reachable — key valid' };
+      } else {
+        const errText = await res.text().catch(() => '');
+        let errMsg = `Stripe returned ${res.status}`;
+        try { const j = JSON.parse(errText) as Record<string, unknown>; const e = j.error as Record<string, unknown>; if (e?.message) errMsg = `Stripe ${res.status}: ${String(e.message)}`; } catch {}
+        const code = res.status === 401 ? 'invalid_api_key' : res.status === 403 ? 'insufficient_api_scope' : 'upstream_api_error';
+        stripePing = { status: 'error', error_code: code, message: errMsg };
+        issues.push(`Stripe ${code}: ${errMsg}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      stripePing = { status: 'error', error_code: 'upstream_api_error', message: `Network error: ${msg}` };
+      issues.push(`Stripe ping failed: ${msg}`);
+    }
+  }
+
+  // ── Instantly API ping ───────────────────────────────────────────────────
+  let instantlyPing: Record<string, unknown> = { status: 'skipped', message: 'Instantly key not configured' };
+  const instantlyKey = ENV.INSTANTLY_API_KEY;
+  if (instantlyKey) {
+    try {
+      // v1 uses api_key query param; v2 uses Bearer
+      const v1Url = `https://api.instantly.ai/api/v1/campaign/list?api_key=${encodeURIComponent(instantlyKey)}&limit=1&skip=0`;
+      const res = await fetch(v1Url, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        instantlyPing = { status: 'ok', message: 'Instantly v1 API reachable — key valid' };
+      } else if (res.status === 401 || res.status === 403) {
+        // Try v2 Bearer
+        const res2 = await fetch('https://api.instantly.ai/api/v2/campaigns?limit=1', {
+          headers: { Authorization: `Bearer ${instantlyKey}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res2.ok) {
+          instantlyPing = { status: 'ok', message: 'Instantly v2 API reachable — key valid' };
+        } else {
+          instantlyPing = { status: 'error', error_code: 'invalid_api_key', message: `Instantly v1=${res.status} v2=${res2.status} — check API key in Vercel (instantl var)` };
+          issues.push(`Instantly invalid_api_key: v1=${res.status} v2=${res2.status}`);
+        }
+      } else {
+        instantlyPing = { status: 'error', error_code: 'upstream_api_error', message: `Instantly returned ${res.status}` };
+        issues.push(`Instantly upstream_api_error: HTTP ${res.status}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      instantlyPing = { status: 'error', error_code: 'upstream_api_error', message: `Network error: ${msg}` };
+      issues.push(`Instantly ping failed: ${msg}`);
+    }
+  }
+
+  // ── Admin auth check ─────────────────────────────────────────────────────
+  const authCheck = {
+    session_cookie: 'valid',
+    admin_username_configured: Boolean(ENV.ADMIN_USERNAME),
+    admin_password_configured: Boolean(ENV.ADMIN_PASSWORD),
   };
+  if (!ENV.ADMIN_USERNAME || !ENV.ADMIN_PASSWORD) {
+    issues.push('ADMIN_USERNAME or ADMIN_PASSWORD missing — admin login will fail');
+  }
 
-  // ── Summary ────────────────────────────────────────────────────────────────
-  const issues: string[] = [];
-  if (envStatus.SUPABASE_SERVICE_ROLE_KEY === 'missing') issues.push('SUPABASE_SERVICE_ROLE_KEY missing');
-  if (envStatus.HUBSPOT_ACCESS_TOKEN === 'missing') issues.push('HubSpot token missing');
-  if ((results.supabase as Record<string, unknown>)?.error_code) issues.push(`Supabase: ${(results.supabase as Record<string, unknown>).error_code}`);
-  if ((results.hubspot_ping as Record<string, unknown>)?.error_code) issues.push(`HubSpot: ${(results.hubspot_ping as Record<string, unknown>).error_code}`);
-  if ((results.missing_tables as string[])?.length > 0) issues.push(`Missing tables: ${(results.missing_tables as string[]).join(', ')}`);
-
-  results.summary = {
-    ready_for_discovery: issues.length === 0,
-    issue_count: issues.length,
-    issues,
-  };
-
-  return NextResponse.json(results);
+  return NextResponse.json({
+    summary: {
+      ready_for_discovery: issues.length === 0,
+      issues,
+    },
+    env_vars: envStatus,
+    vercel_name_resolution: vercelNameResolution,
+    supabase: supabaseResult,
+    table_check: tableCheck,
+    missing_tables: missingTables,
+    hubspot_ping: hubspotPing,
+    stripe_ping: stripePing,
+    instantly_ping: instantlyPing,
+    auth: authCheck,
+  });
 }

@@ -30,6 +30,8 @@ interface DiagnosticsResult {
   table_check?: Record<string, string>;
   missing_tables?: string[];
   hubspot_ping?: Record<string, unknown>;
+  stripe_ping?: Record<string, unknown>;
+  instantly_ping?: Record<string, unknown>;
   auth?: Record<string, unknown>;
 }
 
@@ -228,18 +230,24 @@ export default function DataDiscoveryPage() {
             )}
           </div>
 
-          {/* Supabase + HubSpot results */}
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 text-xs">
-            {diagnostics.supabase && (
-              <div className={`rounded px-3 py-2 ${(diagnostics.supabase as Record<string, unknown>).status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                <span className="font-bold">Supabase: </span>{String((diagnostics.supabase as Record<string, unknown>).message ?? (diagnostics.supabase as Record<string, unknown>).error_code)}
-              </div>
-            )}
-            {diagnostics.hubspot_ping && (
-              <div className={`rounded px-3 py-2 ${(diagnostics.hubspot_ping as Record<string, unknown>).status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                <span className="font-bold">HubSpot: </span>{String((diagnostics.hubspot_ping as Record<string, unknown>).message ?? (diagnostics.hubspot_ping as Record<string, unknown>).error_code)}
-              </div>
-            )}
+          {/* API ping results */}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+            {([
+              { key: 'supabase', label: 'Supabase' },
+              { key: 'hubspot_ping', label: 'HubSpot' },
+              { key: 'stripe_ping', label: 'Stripe' },
+              { key: 'instantly_ping', label: 'Instantly' },
+            ] as { key: keyof DiagnosticsResult; label: string }[]).map(({ key, label }) => {
+              const ping = diagnostics[key] as Record<string, unknown> | undefined;
+              if (!ping) return null;
+              const isOk = ping.status === 'ok';
+              const isSkipped = ping.status === 'skipped';
+              return (
+                <div key={key} className={`rounded px-3 py-2 ${isOk ? 'bg-emerald-100 text-emerald-800' : isSkipped ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-800'}`}>
+                  <span className="font-bold">{label}: </span>{String(ping.message ?? ping.error_code ?? '')}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -5,17 +5,20 @@ import { INSTANTLY_CAMPAIGN_MAPPINGS, INSTANTLY_NAMING_CONVENTION } from '@/lib/
 
 function checkAuth(req: NextRequest) { const s = req.cookies.get('tap2_admin_session'); return Boolean(s?.value && s.value.length >= 32); }
 
-async function iGet(path: string): Promise<Record<string, unknown>> {
+async function iGet(path: string, params?: Record<string, string>): Promise<Record<string, unknown>> {
   const key = ENV.INSTANTLY_API_KEY; if (!key) throw new Error('Instantly not configured');
-  // Try v1 first, fall back to v2 format
-  const res = await fetch(`https://api.instantly.ai/api/v1${path}`, { headers: { Authorization: `Bearer ${key}` } });
-  if (!res.ok) {
-    // Try alternate base URL for v2
-    const res2 = await fetch(`https://api.instantly.ai/api/v2${path}`, { headers: { Authorization: `Bearer ${key}` } });
-    if (!res2.ok) throw new Error(`Instantly ${res.status}`);
-    return res2.json() as Promise<Record<string, unknown>>;
-  }
-  return res.json() as Promise<Record<string, unknown>>;
+  // v1 uses api_key as query param (NOT Bearer header)
+  const url1 = new URL(`https://api.instantly.ai/api/v1${path}`);
+  url1.searchParams.set('api_key', key);
+  if (params) Object.entries(params).forEach(([k, v]) => url1.searchParams.set(k, v));
+  const res = await fetch(url1.toString());
+  if (res.ok) return res.json() as Promise<Record<string, unknown>>;
+  // v2 uses Bearer token
+  const url2 = new URL(`https://api.instantly.ai/api/v2${path}`);
+  if (params) Object.entries(params).forEach(([k, v]) => url2.searchParams.set(k, v));
+  const res2 = await fetch(url2.toString(), { headers: { Authorization: `Bearer ${key}` } });
+  if (!res2.ok) throw new Error(`Instantly ${res.status} (v1) / ${res2.status} (v2)`);
+  return res2.json() as Promise<Record<string, unknown>>;
 }
 
 export async function POST(req: NextRequest) {
@@ -29,13 +32,12 @@ export async function POST(req: NextRequest) {
     let campaigns: Record<string, unknown>[] = [];
     let apiVersion = 'v1';
 
-    // Try v1 campaign list
+    // Try v1 campaign list (api_key as query param)
     try {
-      const res = await iGet('/campaign/list?limit=100&skip=0');
+      const res = await iGet('/campaign/list', { limit: '100', skip: '0' });
       campaigns = (res.campaigns ?? res.data ?? res.items ?? []) as Record<string, unknown>[];
     } catch {
       apiVersion = 'v2';
-      // v2 might have different endpoint
       const key2 = ENV.INSTANTLY_API_KEY;
       const res = await fetch('https://api.instantly.ai/api/v2/campaigns?limit=100', { headers: { Authorization: `Bearer ${key2}` } });
       if (res.ok) {
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
     // Fetch analytics for all campaigns
     for (const c of campaigns.slice(0, 20)) {
       try {
-        const analytics = await iGet(`/campaign/analytics?campaign_id=${c.id}`);
+        const analytics = await iGet('/campaign/analytics', { campaign_id: String(c.id) });
         const enriched = { campaign_id: c.id, campaign_name: c.name, ...analytics };
         analyticsResults.push(enriched);
         await upsertRawRecord('raw_instantly_campaign_analytics', `${c.id}-analytics`, enriched, runId, { campaign_id: String(c.id) });
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
     const leadsData: Record<string, unknown>[] = [];
     for (const c of campaigns.slice(0, 5)) {
       try {
-        const leads = await iGet(`/lead/list?campaign_id=${c.id}&limit=50`);
+        const leads = await iGet('/lead/list', { campaign_id: String(c.id), limit: '50' });
         const items = ((leads.leads ?? leads.data ?? leads.items ?? []) as Record<string, unknown>[]);
         for (const l of items) {
           try { await upsertRawRecord('raw_instantly_leads', `${c.id}-${l.email}`, l, runId, { campaign_id: String(c.id) }); written++; leadsData.push(l); } catch {}
@@ -115,8 +117,9 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
+    const code = msg.includes('401') || msg.includes('403') ? 'invalid_api_key' : 'upstream_api_error';
     if (runId) await completeSyncRun(runId, 'error', { fetched: 0, written: 0 }, {}, msg).catch(() => null);
-    return NextResponse.json({ status: 'error', source: 'instantly', message: msg, records_fetched: 0 }, { status: 500 });
+    return NextResponse.json({ error_code: code, status: 'error', source: 'instantly', message: msg, records_fetched: 0 }, { status: 500 });
   }
 }
 
