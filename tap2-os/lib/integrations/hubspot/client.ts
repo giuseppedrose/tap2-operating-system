@@ -1,29 +1,30 @@
-const accessToken = process.env.HUBSPOT_ACCESS_TOKEN
+// Server-side only — never import from client components
+const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+export const HUBSPOT_BASE_URL = 'https://api.hubapi.com';
 
 export function getHubSpotHeaders() {
-  if (!accessToken) return null
+  if (!accessToken) return null;
   return {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
-  }
+  };
 }
 
-export const HUBSPOT_BASE_URL = 'https://api.hubapi.com'
-
 export async function hubspotFetch(path: string, options?: RequestInit) {
-  const headers = getHubSpotHeaders()
-  if (!headers) throw new Error('HubSpot not configured: missing HUBSPOT_ACCESS_TOKEN')
+  const headers = getHubSpotHeaders();
+  if (!headers) throw new Error('HubSpot not configured: missing HUBSPOT_ACCESS_TOKEN');
 
   const res = await fetch(`${HUBSPOT_BASE_URL}${path}`, {
     ...options,
     headers: { ...headers, ...options?.headers },
-  })
+  });
 
   if (!res.ok) {
-    throw new Error(`HubSpot API error ${res.status}: ${await res.text()}`)
+    // Safe error — status code only, no raw response body that might contain sensitive data
+    throw new Error(`HubSpot API error: ${res.status}`);
   }
 
-  return res.json()
+  return res.json();
 }
 
-export const isHubSpotConfigured = Boolean(accessToken)
+export const isHubSpotConfigured = Boolean(accessToken);
