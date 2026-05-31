@@ -1,66 +1,63 @@
-// Tap2 Chart Theme — Stripe-quality, minimal, high-precision
+// Tap2 Chart Theme — Stripe/JP Morgan quality
+// Single source of truth for all chart styling
 
-export const FONT = '"Inter", ui-sans-serif, system-ui, sans-serif';
+export const BLUE  = "#0358F1";
+export const BLUE2 = "#3b82f6";   // secondary series
+export const SLATE = "#334155";   // dark line
+export const MUTED = "#94a3b8";   // muted / axis text
+export const GREEN = "#10b981";
+export const AMBER = "#f59e0b";
+export const RED   = "#ef4444";
 
 export const TAP2_COLORS = {
-  primary:   "#0358F1",
-  secondary: "#1a1a2e",
-  muted:     "#94a3b8",
+  primary:   BLUE,
+  secondary: SLATE,
+  muted:     MUTED,
+  success:   GREEN,
+  warning:   AMBER,
+  danger:    RED,
   grid:      "#f1f5f9",
-  gridLine:  "#e2e8f0",
-  background: "#ffffff",
-  cardBg:    "#f8fafc",
-  success:   "#10b981",
-  warning:   "#f59e0b",
-  danger:    "#ef4444",
-  text:      "#0f172a",
-  textMuted: "#64748b",
 };
 
-export const SERIES_COLORS = [
-  "#0358F1",
-  "#06b6d4",
-  "#8b5cf6",
-  "#10b981",
-  "#f59e0b",
-];
+export const FONT = "Inter, ui-sans-serif, system-ui, sans-serif";
 
-// No grid lines — Stripe-style clean
+// Axis: no lines, small muted tick labels
 export const axisStyle = {
-  tick: { fontSize: 11, fill: "#94a3b8", fontFamily: FONT },
+  tick:     { fontSize: 11, fill: MUTED, fontFamily: FONT },
   tickLine: false as const,
   axisLine: false as const,
 };
 
-// Invisible grid — only faint horizontal rules
+// Minimal grid — only faint horizontal lines
 export const gridStyle = {
   strokeDasharray: "0" as const,
   stroke: "#f1f5f9",
-  horizontal: true as const,
   vertical: false as const,
+  horizontal: true as const,
 };
 
-// Premium tooltip
+// Premium dark tooltip — matches Stripe / Linear
 export const tooltipStyle = {
   contentStyle: {
     background: "#0f172a",
     border: "none",
-    borderRadius: 8,
+    borderRadius: 6,
     fontSize: 12,
     color: "#f8fafc",
     padding: "8px 12px",
-    boxShadow: "0 8px 30px rgba(0,0,0,0.18)",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: FONT,
+    boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
   },
-  labelStyle: { color: "#94a3b8", fontSize: 11, marginBottom: 2, fontFamily: FONT },
-  cursor: { stroke: "#f1f5f9", strokeWidth: 1 },
-  itemStyle: { color: "#f8fafc", fontSize: 12, fontFamily: FONT },
+  labelStyle:  { color: "#94a3b8", fontSize: 11, marginBottom: 4 },
+  itemStyle:   { color: "#f8fafc" },
+  cursor:      { stroke: "#e2e8f0", strokeWidth: 1 },
 };
 
-// Standard dot style
-export const activeDotStyle = {
-  r: 4,
-  fill: "#0358F1",
-  stroke: "#ffffff",
-  strokeWidth: 2,
-};
+// Standard gradient IDs used across area charts
+export const GRADIENT_BLUE    = "tap2-grad-blue";
+export const GRADIENT_GREEN   = "tap2-grad-green";
+export const GRADIENT_SLATE   = "tap2-grad-slate";
+
+// Standard chart margins
+export const MARGIN_DEFAULT   = { top: 8, right: 8, bottom: 0, left: 0 };
+export const MARGIN_WITH_YAXIS = { top: 8, right: 16, bottom: 0, left: 0 };

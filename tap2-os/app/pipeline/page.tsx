@@ -17,6 +17,9 @@ import type { ActionEntry } from "@/components/analytics/ActionRegister";
 import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
 import { OperatingInsight } from "@/components/analytics/OperatingInsight";
 import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { HorizontalBarRankChart } from "@/components/charts/HorizontalBarRankChart";
+import { SegmentedProgressBars } from "@/components/charts/SegmentedProgressBars";
 
 // ── Computed pipeline state ─────────────────────────────────────────────────────
 const PIPELINE = calcPipeline();
@@ -47,7 +50,6 @@ function buildFunnelRows() {
     const withDays = deals.filter(d => d.days_in_stage > 0);
     const avgDays = withDays.length ? Math.round(withDays.reduce((s, d) => s + d.days_in_stage, 0) / withDays.length) : null;
 
-    // Conversion: what % of this stage move to the next visible stage
     const nextStage = arr[i + 1];
     const nextCount = nextStage ? (groups[nextStage]?.length ?? 0) : 0;
     const conversionToNext = nextStage && count > 0 ? Math.round((nextCount / count) * 100) : null;
@@ -82,6 +84,43 @@ const HEALTH_CFG: Record<DealHealth, { color: string; bg: string }> = {
   "Low Quality":     { color: "text-gray-500",     bg: "bg-gray-100" },
 };
 
+// ── Deal quality buckets ────────────────────────────────────────────────────────
+function buildQualityBuckets() {
+  const totalDeals = ACTIVE_PIPELINE.length;
+  const buckets = {
+    A: { count: 0, mrr: 0 },
+    B: { count: 0, mrr: 0 },
+    C: { count: 0, mrr: 0 },
+    D: { count: 0, mrr: 0 },
+  };
+  ACTIVE_PIPELINE.forEach(d => {
+    if (d.quality_score >= 80) { buckets.A.count++; buckets.A.mrr += d.expected_mrr; }
+    else if (d.quality_score >= 60) { buckets.B.count++; buckets.B.mrr += d.expected_mrr; }
+    else if (d.quality_score >= 40) { buckets.C.count++; buckets.C.mrr += d.expected_mrr; }
+    else { buckets.D.count++; buckets.D.mrr += d.expected_mrr; }
+  });
+  return { buckets, totalDeals };
+}
+
+// ── Close month distribution ────────────────────────────────────────────────────
+function buildCloseMonthData() {
+  const monthMap: Record<string, number> = {};
+  ACTIVE_PIPELINE.forEach(d => {
+    if (!d.expected_close_month) return;
+    monthMap[d.expected_close_month] = (monthMap[d.expected_close_month] ?? 0) + d.expected_mrr;
+  });
+  return Object.entries(monthMap)
+    .sort(([a], [b]) => {
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const [aM, aY] = a.split(" ");
+      const [bM, bY] = b.split(" ");
+      if (aY !== bY) return Number(aY) - Number(bY);
+      return months.indexOf(aM) - months.indexOf(bM);
+    })
+    .slice(0, 5)
+    .map(([label, value]) => ({ label, value, formatted: `€${value}/mo` }));
+}
+
 type DealTab = "active" | "attention" | "closing" | "lost";
 
 export default function PipelinePage() {
@@ -90,6 +129,50 @@ export default function PipelinePage() {
 
   const funnelRows = buildFunnelRows();
   const actionEntries = buildActionRegister();
+  const { buckets, totalDeals } = buildQualityBuckets();
+  const closeMonthData = buildCloseMonthData();
+
+  const stageChartData = PIPELINE.byStage.map(s => ({
+    label: s.stage.slice(0, 12),
+    value: s.mrr,
+    highlight: s.stage === "Negotiation" || s.stage === "Trial / Pilot",
+  }));
+
+  const ownerChartData = PIPELINE.byOwner.map(o => ({
+    label: o.label,
+    value: o.mrr,
+  }));
+
+  const qualityItems = [
+    {
+      label: "A (≥80) — High conviction",
+      value: buckets.A.count,
+      maxValue: totalDeals,
+      formatted: `${buckets.A.count} deals · €${buckets.A.mrr}/mo`,
+      color: "#10b981",
+    },
+    {
+      label: "B (60–79) — Solid",
+      value: buckets.B.count,
+      maxValue: totalDeals,
+      formatted: `${buckets.B.count} deals · €${buckets.B.mrr}/mo`,
+      color: "#0358F1",
+    },
+    {
+      label: "C (40–59) — Needs work",
+      value: buckets.C.count,
+      maxValue: totalDeals,
+      formatted: `${buckets.C.count} deals · €${buckets.C.mrr}/mo`,
+      color: "#f59e0b",
+    },
+    {
+      label: "D (<40) — Low quality",
+      value: buckets.D.count,
+      maxValue: totalDeals,
+      formatted: `${buckets.D.count} deals · €${buckets.D.mrr}/mo`,
+      color: "#ef4444",
+    },
+  ];
 
   const tabDeals: Deal[] =
     tab === "active"    ? ACTIVE_PIPELINE.filter(d => d.deal_stage !== "Nurture" && d.deal_stage !== "New Lead").sort((a,b) => b.expected_mrr - a.expected_mrr) :
@@ -97,10 +180,8 @@ export default function PipelinePage() {
     tab === "closing"   ? PIPELINE.closingThisMonth.sort((a,b) => b.expected_mrr - a.expected_mrr) :
     CLOSED_LOST;
 
-  // Lost reasons
   const lostReasons = Object.entries(PIPELINE.lostReasons).sort((a,b) => b[1].count - a[1].count);
 
-  // Pipeline coverage bridge
   const bridgeRows = [
     { label: "Required MRR gap (€100k ARR target)", value: GAP, type: "opening" as const, running: GAP },
     { label: "Gross pipeline MRR", value: PIPELINE.expectedMRR, type: "subtract" as const, running: GAP - PIPELINE.expectedMRR },
@@ -128,6 +209,38 @@ export default function PipelinePage() {
         <BoardMetricCard label="Pipeline Coverage" value={`${COVERAGE.toFixed(1)}×`} sub="vs €100k ARR gap" dataStatus="derived" flag={COVERAGE < 1 ? "Below 1× — insufficient" : undefined} />
         <BoardMetricCard label="Stale Pipeline" value={`€${(PIPELINE.stalePipeline/1000).toFixed(1)}k`} sub={`${PIPELINE.staleCount} deals flagged`} dataStatus="derived" flag={PIPELINE.staleCount > 0 ? "Requires action" : undefined} />
       </BoardMetricRow>
+
+      {/* ── Visual row: Stage distribution + Owner breakdown ── */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="col-span-2">
+          <ChartFrame
+            title="Pipeline Distribution by Stage"
+            question="Where is pipeline concentrated and which stages are stale?"
+            source="HubSpot"
+            sourceStatus="seed"
+          >
+            <HorizontalBarRankChart
+              data={stageChartData}
+              height={240}
+              valueFormatter={v => `€${v}/mo`}
+            />
+          </ChartFrame>
+        </div>
+        <div className="col-span-1">
+          <ChartFrame
+            title="Pipeline by Owner"
+            question="Who owns the most MRR in pipeline?"
+            source="HubSpot"
+            sourceStatus="seed"
+          >
+            <HorizontalBarRankChart
+              data={ownerChartData}
+              height={240}
+              valueFormatter={v => `€${v}/mo`}
+            />
+          </ChartFrame>
+        </div>
+      </div>
 
       {/* Operating insights */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -172,6 +285,17 @@ export default function PipelinePage() {
         />
       </ExecutiveSection>
 
+      {/* ── Deal Quality Distribution ── */}
+      <ChartFrame
+        title="Deal Quality Distribution"
+        question="What proportion of pipeline scores A-B vs C-D quality?"
+        source="Derived"
+        sourceStatus="derived"
+        footnote="Quality score composite: ICP fit, source quality, meeting completed, decision maker, clear next step."
+      >
+        <SegmentedProgressBars items={qualityItems} />
+      </ChartFrame>
+
       {/* Pipeline coverage bridge */}
       <ExecutiveSection
         title="Pipeline Coverage Bridge"
@@ -193,6 +317,20 @@ export default function PipelinePage() {
       >
         <ActionRegister entries={actionEntries} title="" />
       </ExecutiveSection>
+
+      {/* ── Expected Closes by Month ── */}
+      <ChartFrame
+        title="Expected Closes by Month"
+        question="What pipeline should close in the next 3 months?"
+        source="HubSpot"
+        sourceStatus="seed"
+      >
+        <HorizontalBarRankChart
+          data={closeMonthData}
+          height={140}
+          valueFormatter={v => `€${v}/mo`}
+        />
+      </ChartFrame>
 
       {/* Deal table */}
       <div className="board-card overflow-hidden">

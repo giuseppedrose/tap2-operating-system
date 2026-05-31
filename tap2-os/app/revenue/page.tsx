@@ -9,6 +9,9 @@ import { DataStatusBadge } from "@/components/shared/data-status-badge";
 import { MRRAreaChart } from "@/components/charts/MRRAreaChart";
 import { WaterfallMRR } from "@/components/charts/WaterfallMRR";
 import { HorizontalRankChart } from "@/components/charts/HorizontalRankChart";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { StackedAreaChart } from "@/components/charts/StackedAreaChart";
+import { SegmentedProgressBars } from "@/components/charts/SegmentedProgressBars";
 import { mockRevenueData } from "@/lib/mock-data/revenue";
 
 const revenue = getRevenueQualitySignals();
@@ -33,7 +36,37 @@ const bySegment = Object.entries(
   .map(([label, value]) => ({ label, value, formatted: `€${value}` }))
   .sort((a, b) => b.value - a.value);
 
-const churnRisk = CLOSED_WON.filter(d => d.deal_health !== "Healthy").slice(0, 3);
+// Build stacked area data from mrrHistory — estimated market splits
+const mrrHistory = mockRevenueData.mrrHistory;
+const stackedMarketData = mrrHistory.map(({ month, mrr }) => ({
+  month,
+  nl: Math.round(mrr * 0.636),
+  es: Math.round(mrr * 0.175),
+  co: Math.round(mrr * 0.083),
+  it: Math.round(mrr * 0.07),
+}));
+
+const marketSeries = [
+  { key: "nl", label: "Netherlands", color: "#0358F1" },
+  { key: "es", label: "Spain",       color: "#3b82f6" },
+  { key: "co", label: "Colombia",    color: "#94a3b8" },
+  { key: "it", label: "Italy",       color: "#cbd5e1" },
+];
+
+// Customer concentration: top 5 by MRR
+const top5 = [...CLOSED_WON].sort((a, b) => b.expected_mrr - a.expected_mrr).slice(0, 5);
+const topPct = REVENUE.currentMRR > 0
+  ? ((top5.reduce((s, d) => s + d.expected_mrr, 0) / REVENUE.currentMRR) * 100).toFixed(0)
+  : "0";
+
+const concentrationItems = top5.map(d => ({
+  label: d.company_name.slice(0, 24),
+  value: d.expected_mrr,
+  maxValue: REVENUE.currentMRR,
+  formatted: `€${d.expected_mrr}/mo (${REVENUE.currentMRR > 0 ? ((d.expected_mrr / REVENUE.currentMRR) * 100).toFixed(0) : 0}%)`,
+  subLabel: d.country,
+  color: "#0358F1",
+}));
 
 export default function RevenuePage() {
   const netNew = revenue.monthlyNewMRR + revenue.expansionMRR - revenue.churnedMRR;
@@ -51,15 +84,13 @@ export default function RevenuePage() {
         dataLabel="Seed data — Stripe Pending"
       />
 
-      {/* MRR Waterfall — the only chart that truly matters */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">MRR Movements This Month</p>
-            <p className="text-xs text-blue-600 mt-0.5">Where did revenue come from and go?</p>
-          </div>
-          <DataStatusBadge status="seed" integration="Stripe Pending" />
-        </div>
+      {/* MRR Waterfall */}
+      <ChartFrame
+        title="MRR Movements This Month"
+        question="Where did revenue come from and go?"
+        source="Stripe"
+        sourceStatus="seed"
+      >
         <WaterfallMRR
           previousMRR={REVENUE.currentMRR - netNew}
           newMRR={revenue.monthlyNewMRR}
@@ -67,7 +98,7 @@ export default function RevenuePage() {
           churnedMRR={revenue.churnedMRR}
           currentMRR={REVENUE.currentMRR}
         />
-      </div>
+      </ChartFrame>
 
       {/* Revenue signal + milestone */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -85,24 +116,22 @@ export default function RevenuePage() {
       </div>
 
       {/* MRR trajectory */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">MRR Trajectory</p>
-            <p className="text-xs text-blue-600 mt-0.5">Are we growing fast enough to hit €100k ARR?</p>
-          </div>
-          <DataStatusBadge status="seed" integration="Stripe Pending" />
-        </div>
+      <ChartFrame
+        title="MRR Trajectory"
+        question="Are we growing fast enough to hit €100k ARR?"
+        source="Stripe"
+        sourceStatus="seed"
+      >
         <MRRAreaChart
           data={mockRevenueData.mrrHistory}
           height={200}
           referenceValue={8300}
           referenceLabel="€100k ARR target"
         />
-      </div>
+      </ChartFrame>
 
-      {/* Revenue quality — what really matters */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
+      {/* Revenue quality */}
+      <div className="border border-gray-200 bg-white p-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">Revenue Quality Signals</p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
@@ -147,34 +176,66 @@ export default function RevenuePage() {
         </div>
       </div>
 
-      {/* Revenue breakdown */}
+      {/* Revenue breakdown — wrapped in ChartFrame */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">MRR by Market</p>
-            <DataStatusBadge status="seed" />
-          </div>
+        <ChartFrame
+          title="MRR by Market"
+          question="Which markets are contributing most to recurring revenue?"
+          source="Stripe"
+          sourceStatus="seed"
+        >
           <HorizontalRankChart
             data={byCountry}
             valueFormatter={v => `€${v}`}
             height={byCountry.length * 36 + 20}
           />
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">MRR by Segment</p>
-            <DataStatusBadge status="seed" />
-          </div>
+        </ChartFrame>
+        <ChartFrame
+          title="MRR by Segment"
+          question="Which customer segments drive the most MRR?"
+          source="Stripe"
+          sourceStatus="seed"
+        >
           <HorizontalRankChart
             data={bySegment}
             valueFormatter={v => `€${v}`}
             height={bySegment.length * 36 + 20}
           />
-        </div>
+        </ChartFrame>
       </div>
 
+      {/* ── Revenue Composition: MRR by Market Trend ── */}
+      <ChartFrame
+        title="MRR by Market — Trend"
+        question="Is revenue diversifying across markets or concentrating?"
+        source="Stripe Pending"
+        sourceStatus="seed"
+        footnote="Split estimated from closed-won deal proportions. Stripe sync will replace with actuals."
+      >
+        <StackedAreaChart
+          data={stackedMarketData}
+          xKey="month"
+          series={marketSeries}
+          height={200}
+          stacked={true}
+          valueFormatter={v => `€${v}`}
+          tickFormatter={v => v.split(" ")[0]}
+        />
+      </ChartFrame>
+
+      {/* ── Customer Concentration ── */}
+      <ChartFrame
+        title="Revenue Concentration"
+        question="How dependent is MRR on the top 5 customers?"
+        source="Stripe Pending"
+        sourceStatus="seed"
+        footnote={`Top 5 customers = ${topPct}% of total MRR. Target: <40% concentration for revenue resilience.`}
+      >
+        <SegmentedProgressBars items={concentrationItems} />
+      </ChartFrame>
+
       {/* Customer revenue table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="text-sm font-semibold text-gray-900">Active Revenue Base — {REVENUE.activeClients} Customers</p>
@@ -183,27 +244,27 @@ export default function RevenuePage() {
           <DataStatusBadge status="seed" integration="Stripe Pending" />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full data-table min-w-[600px]">
+          <table className="board-table min-w-[600px]">
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>Country</th>
-                <th>Segment</th>
+                <th className="text-left">Customer</th>
+                <th className="text-left">Country</th>
+                <th className="text-left">Segment</th>
                 <th>MRR</th>
-                <th>Partner</th>
-                <th>Source</th>
+                <th className="text-left">Partner</th>
+                <th className="text-left">Source</th>
                 <th>Since</th>
               </tr>
             </thead>
             <tbody>
               {CLOSED_WON.sort((a, b) => b.expected_mrr - a.expected_mrr).map(d => (
                 <tr key={d.deal_id}>
-                  <td className="font-medium text-gray-900">{d.company_name}</td>
-                  <td className="text-gray-500">{d.country}</td>
-                  <td className="text-gray-500 text-xs">{d.segment}</td>
+                  <td className="text-left font-medium text-gray-900">{d.company_name}</td>
+                  <td className="text-left text-gray-500">{d.country}</td>
+                  <td className="text-left text-gray-500 text-xs">{d.segment}</td>
                   <td className="font-semibold text-[#0358F1]">€{d.expected_mrr}/mo</td>
-                  <td className="text-gray-500">{d.owner}</td>
-                  <td className="text-gray-400 text-xs">{d.source}</td>
+                  <td className="text-left text-gray-500">{d.owner}</td>
+                  <td className="text-left text-gray-400 text-xs">{d.source}</td>
                   <td className="text-gray-400 text-xs">{d.close_date.slice(0, 7)}</td>
                 </tr>
               ))}

@@ -2,9 +2,15 @@
 
 import { calcGTMSources } from "@/lib/operating-model/calculations";
 import { OperatingBrief } from "@/components/operating/OperatingBrief";
-import { DataStatusBadge } from "@/components/shared/data-status-badge";
-import { HorizontalRankChart } from "@/components/charts/HorizontalRankChart";
 import { InsightCard } from "@/components/shared/insight-card";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { HorizontalBarRankChart } from "@/components/charts/HorizontalBarRankChart";
+import { ScatterQuadrantChart } from "@/components/charts/ScatterQuadrantChart";
+import { DataStatusBadge } from "@/components/shared/data-status-badge";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import { axisStyle, tooltipStyle } from "@/components/charts/chart-theme";
 import type { GTMRecommendation } from "@/lib/operating-model/types";
 
 const sources = calcGTMSources().filter(s => s.leads > 0);
@@ -24,6 +30,27 @@ const meetingRankData = sources
   .filter(s => s.meetings > 0)
   .sort((a, b) => b.lead_to_meeting_rate - a.lead_to_meeting_rate)
   .map(s => ({ label: s.source, value: s.lead_to_meeting_rate, formatted: `${s.lead_to_meeting_rate}%` }));
+
+// Quadrant: quality score vs lead volume
+const quadrantData = sources
+  .filter(s => s.leads > 0)
+  .map(s => ({
+    name: s.source,
+    x: s.leads,
+    y: s.quality_score,
+    color: s.recommendation === "Double Down" ? "#0358F1" : s.recommendation === "Pause" ? "#ef4444" : "#94a3b8",
+  }));
+
+// Source conversion funnel — top 6 by closed_mrr
+const top6Sources = [...sources]
+  .sort((a, b) => b.closed_mrr - a.closed_mrr)
+  .slice(0, 6)
+  .map(s => ({
+    source: s.source.slice(0, 12),
+    leads: s.leads,
+    meetings: s.meetings,
+    wins: s.closed_won,
+  }));
 
 const REC_CONFIG: Record<GTMRecommendation, { bg: string; text: string; border: string }> = {
   "Double Down": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
@@ -79,41 +106,83 @@ export default function GTMPage() {
         )}
       </div>
 
-      {/* Two ranked charts side by side */}
+      {/* ── Section A: Quality vs Volume Quadrant ── */}
+      <ChartFrame
+        title="Channel Quality vs Volume Analysis"
+        question="Which channels are high-volume AND high-quality? Which are noisy?"
+        source="HubSpot + Instantly"
+        sourceStatus="seed"
+        footnote="Quality score = composite of close rate, ARPA, deal quality, and pipeline generated per lead. Quadrant midpoint = median. Blue = Double Down, Red = Pause, Gray = Evaluate."
+      >
+        <ScatterQuadrantChart
+          data={quadrantData}
+          xLabel="Lead Volume"
+          yLabel="Quality Score"
+          xFormatter={v => String(v)}
+          yFormatter={v => `${v}`}
+          quadrantLabels={{ tl: "High Quality Low Volume", tr: "Scale This", bl: "Noisy", br: "Needs Improvement" }}
+          height={260}
+        />
+      </ChartFrame>
+
+      {/* ── Section B: Source Conversion Funnel ── */}
+      <ChartFrame
+        title="Source-to-Win Funnel"
+        question="Where in the sales funnel does each channel drop off?"
+        source="HubSpot + Instantly"
+        sourceStatus="seed"
+      >
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart
+            data={top6Sources}
+            layout="vertical"
+            margin={{ top: 4, right: 24, bottom: 4, left: 0 }}
+          >
+            <XAxis type="number" {...axisStyle} />
+            <YAxis type="category" dataKey="source" width={110} {...axisStyle} />
+            <Tooltip
+              {...tooltipStyle}
+              formatter={(v: unknown) => [String(v), ""]}
+            />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
+            <Bar dataKey="leads" name="Leads" fill="#e2e8f0" barSize={8} radius={[0, 3, 3, 0]} />
+            <Bar dataKey="meetings" name="Meetings" fill="#94a3b8" barSize={8} radius={[0, 3, 3, 0]} />
+            <Bar dataKey="wins" name="Wins" fill="#0358F1" barSize={8} radius={[0, 3, 3, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
+
+      {/* ── Two ranked charts — wrapped in ChartFrame ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Closed MRR by Source</p>
-              <p className="text-xs text-blue-600 mt-0.5">Which channel is creating revenue?</p>
-            </div>
-            <DataStatusBadge status="seed" />
-          </div>
-          <HorizontalRankChart
+        <ChartFrame
+          title="Closed MRR by Source"
+          question="Which channel is creating revenue?"
+          source="HubSpot"
+          sourceStatus="seed"
+        >
+          <HorizontalBarRankChart
             data={mrrRankData}
             valueFormatter={v => `€${v}`}
             height={mrrRankData.length * 36 + 16}
           />
-        </div>
+        </ChartFrame>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Lead → Meeting Rate</p>
-              <p className="text-xs text-blue-600 mt-0.5">Which channel has the highest meeting efficiency?</p>
-            </div>
-            <DataStatusBadge status="seed" />
-          </div>
-          <HorizontalRankChart
+        <ChartFrame
+          title="Lead → Meeting Rate by Source"
+          question="Which channel has the highest meeting efficiency?"
+          source="HubSpot"
+          sourceStatus="seed"
+        >
+          <HorizontalBarRankChart
             data={meetingRankData}
             valueFormatter={v => `${v}%`}
             height={meetingRankData.length * 36 + 16}
           />
-        </div>
+        </ChartFrame>
       </div>
 
       {/* Full attribution table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="text-sm font-semibold text-gray-900">Channel Attribution — Full View</p>
@@ -122,11 +191,11 @@ export default function GTMPage() {
           <DataStatusBadge status="seed" integration="HubSpot + Instantly Pending" />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full data-table min-w-[900px]">
+          <table className="board-table min-w-[900px]">
             <thead>
               <tr>
-                <th>Source</th>
-                <th>Category</th>
+                <th className="text-left">Source</th>
+                <th className="text-left">Category</th>
                 <th>Leads</th>
                 <th>Meetings</th>
                 <th>Close Rate</th>
@@ -141,8 +210,8 @@ export default function GTMPage() {
                 const rec = REC_CONFIG[s.recommendation];
                 return (
                   <tr key={s.source}>
-                    <td className="font-semibold text-gray-900">{s.source}</td>
-                    <td className="text-gray-400 text-xs">{s.category}</td>
+                    <td className="text-left font-semibold text-gray-900">{s.source}</td>
+                    <td className="text-left text-gray-400 text-xs">{s.category}</td>
                     <td className="text-gray-600">{s.leads}</td>
                     <td className="text-gray-600">{s.meetings}</td>
                     <td className="font-medium text-gray-700">{s.overall_close_rate}%</td>

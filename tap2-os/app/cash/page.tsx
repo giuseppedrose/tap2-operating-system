@@ -5,7 +5,11 @@ import { OperatingBrief } from "@/components/operating/OperatingBrief";
 import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
 import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
 import { BridgeChart } from "@/components/analytics/BridgeChart";
+import { WaterfallBridge } from "@/components/charts/WaterfallBridge";
 import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { AreaTrendChart } from "@/components/charts/AreaTrendChart";
+import { HorizontalBarRankChart } from "@/components/charts/HorizontalBarRankChart";
 
 const CONFIDENCE_STYLE: Record<string, string> = {
   auto:   "text-emerald-700 bg-emerald-50",
@@ -107,7 +111,73 @@ export default function CashPage() {
         />
       </BoardMetricRow>
 
-      {/* 3. Seed Data Warning */}
+      {/* 3. Visual Charts — Burn Trend + Category Breakdown */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ChartFrame
+            title="Gross Burn vs MRR — Monthly Trend"
+            question="Is net burn shrinking as MRR grows?"
+            source="Seed / Rabobank Pending"
+            sourceStatus="seed"
+            footnote="Net burn = gross burn − MRR. Every €1k MRR growth reduces net burn by €1k and adds ~0.15 months runway."
+          >
+            <AreaTrendChart
+              data={mockCashData.burnHistory.map(d => ({
+                month: d.month.split(" ")[0],
+                burn: d.burn,
+              }))}
+              xKey="month"
+              yKey="burn"
+              height={200}
+              color="#ef4444"
+              valueFormatter={(v) => `€${v.toLocaleString()}`}
+            />
+          </ChartFrame>
+        </div>
+        <ChartFrame
+          title="Burn by Category"
+          question="Which expense category is the largest driver of burn?"
+          source="Seed / Manual"
+          sourceStatus="seed"
+        >
+          <HorizontalBarRankChart
+            data={mockCashData.expensesByCategory.map(e => ({
+              label: e.category.replace("Salaries & Contractors", "Payroll").replace(" & ", " & "),
+              value: e.amount,
+              formatted: `€${e.amount.toLocaleString()}`,
+            }))}
+            valueFormatter={(v) => `€${v}`}
+            barSize={10}
+            height={200}
+          />
+        </ChartFrame>
+      </div>
+
+      {/* Cash Bridge — new WaterfallBridge visual */}
+      <ChartFrame
+        title="Cash Bridge — May 2026"
+        question="How did opening cash become closing cash?"
+        source="Seed / Manual"
+        sourceStatus="seed"
+        footnote="Seed estimate. Upload Rabobank CSV to replace with actuals."
+      >
+        <WaterfallBridge
+          rows={[
+            { label: "Opening cash (Apr)", value: 38500, type: "base",     running: 38500 },
+            { label: "Revenue collected",  value: 1350,  type: "add",      running: 39850 },
+            { label: "Payroll & contractors", value: 5200, type: "subtract", running: 34650 },
+            { label: "SaaS & tools",       value: 820,   type: "subtract", running: 33830 },
+            { label: "Marketing",          value: 680,   type: "subtract", running: 33150 },
+            { label: "Office & travel",    value: 800,   type: "subtract", running: 32350 },
+            { label: "Legal & accounting", value: 340,   type: "subtract", running: 32010 },
+            { label: "Other expenses",     value: 360,   type: "subtract", running: 31650 },
+            { label: "Closing cash (May)", value: 31650, type: "total",    running: 31650 },
+          ]}
+          currency
+        />
+      </ChartFrame>
+
+      {/* Seed Data Warning */}
       <div className="border border-amber-200 bg-amber-50 px-5 py-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700 mb-1">Data Quality Warning</p>
         <p className="text-sm text-amber-900 font-medium">

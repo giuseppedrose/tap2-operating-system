@@ -7,6 +7,13 @@ import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMet
 import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
 import { OperatingInsight } from "@/components/analytics/OperatingInsight";
 import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { ConversionFunnelChart } from "@/components/charts/ConversionFunnelChart";
+import { SegmentedProgressBars } from "@/components/charts/SegmentedProgressBars";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { axisStyle, tooltipStyle } from "@/components/charts/chart-theme";
 
 // ─── Funnel derivation ────────────────────────────────────────────────────────
 
@@ -35,7 +42,7 @@ function buildFunnel() {
     { stage: "MRR Closed (€/mo)", count: totalMRR,      prev: totalDeals, isMRR: true },
   ] as { stage: string; count: number; prev: number | null; isMRR?: boolean }[];
 
-  return rows.map((r, i) => {
+  return rows.map((r) => {
     const pctOfPrev = r.prev !== null && r.prev > 0
       ? ((r.count / r.prev) * 100).toFixed(1) + "%"
       : "—";
@@ -46,9 +53,47 @@ function buildFunnel() {
   });
 }
 
+// Build ConversionFunnelChart steps from funnel rows
+function buildFunnelChartSteps() {
+  const totalSent     = SEED_CAMPAIGNS.reduce((s, c) => s + c.emails_sent, 0);
+  const totalDelivered = SEED_CAMPAIGNS.reduce((s, c) => s + c.delivered, 0);
+  const avgOpenRate   = SEED_CAMPAIGNS.reduce((s, c) => s + c.open_rate, 0) / SEED_CAMPAIGNS.length;
+  const avgReplyRate  = SEED_CAMPAIGNS.reduce((s, c) => s + c.reply_rate, 0) / SEED_CAMPAIGNS.length;
+  const avgPosReply   = SEED_CAMPAIGNS.reduce((s, c) => s + c.positive_reply_rate, 0) / SEED_CAMPAIGNS.length;
+  const totalMeetings = SEED_CAMPAIGNS.reduce((s, c) => s + c.meetings_booked, 0);
+  const totalDeals    = SEED_CAMPAIGNS.reduce((s, c) => s + c.deals_created, 0);
+  const totalMRR      = SEED_CAMPAIGNS.reduce((s, c) => s + c.closed_mrr, 0);
+
+  const opened     = Math.round(totalDelivered * avgOpenRate / 100);
+  const replied    = Math.round(totalDelivered * avgReplyRate / 100);
+  const posReplied = Math.round(totalDelivered * avgPosReply / 100);
+
+  const stepsRaw = [
+    { label: "Emails Sent",    count: totalSent,     prev: null },
+    { label: "Delivered",      count: totalDelivered, prev: totalSent },
+    { label: "Opened (est.)",  count: opened,        prev: totalDelivered },
+    { label: "Replied",        count: replied,       prev: opened },
+    { label: "Positive Reply", count: posReplied,    prev: replied },
+    { label: "Meeting Booked", count: totalMeetings, prev: posReplied },
+    { label: "Deal Created",   count: totalDeals,    prev: totalMeetings },
+    { label: "MRR Closed",     count: totalMRR,      prev: totalDeals, isMRR: true },
+  ];
+
+  return stepsRaw.map(r => ({
+    label: r.label,
+    count: r.count,
+    pctOfTop: totalSent > 0 ? parseFloat(((r.count / totalSent) * 100).toFixed(1)) : 0,
+    pctOfPrev: r.prev !== null && r.prev > 0
+      ? parseFloat(((r.count / r.prev) * 100).toFixed(1))
+      : null,
+    isMRR: r.isMRR,
+  }));
+}
+
 export default function CampaignsPage() {
   const summary  = getCampaignSummary();
   const funnel   = buildFunnel();
+  const funnelSteps = buildFunnelChartSteps();
 
   const bestByMRR      = [...SEED_CAMPAIGNS].sort((a, b) => b.closed_mrr - a.closed_mrr)[0];
   const bestByMRR1000  = [...SEED_CAMPAIGNS].sort((a, b) => b.closed_mrr_per_1000 - a.closed_mrr_per_1000)[0];
@@ -60,7 +105,6 @@ export default function CampaignsPage() {
   })[0];
   const lowestEfficiency = [...SEED_CAMPAIGNS].sort((a, b) => a.quality_score - b.quality_score)[0];
 
-  // Attribution path data
   const totalSent     = summary.totalEmailsSent;
   const totalDelivered = SEED_CAMPAIGNS.reduce((s, c) => s + c.delivered, 0);
   const posReplied    = Math.round(totalDelivered * summary.avgPositiveReplyRate / 100);
@@ -70,6 +114,27 @@ export default function CampaignsPage() {
 
   const briefStatus: "behind" | "on_track" | "critical" =
     totalMRR > 500 ? "on_track" : totalMRR > 200 ? "behind" : "critical";
+
+  // Campaign engagement comparison data
+  const campaignComparisonData = SEED_CAMPAIGNS.map(c => ({
+    name: c.campaign_name.replace(" Q4 2025","").replace(" Q1 2026",""),
+    open: c.open_rate,
+    reply: c.reply_rate,
+    positive: c.positive_reply_rate,
+  }));
+
+  // MRR per 1000 efficiency items
+  const maxMRR1000 = Math.max(...SEED_CAMPAIGNS.map(c => c.closed_mrr_per_1000));
+  const efficiencyItems = [...SEED_CAMPAIGNS]
+    .sort((a, b) => b.closed_mrr_per_1000 - a.closed_mrr_per_1000)
+    .map(c => ({
+      label: c.campaign_name.replace(" Q4 2025","").replace(" Q1 2026",""),
+      value: c.closed_mrr_per_1000,
+      maxValue: maxMRR1000,
+      formatted: `€${c.closed_mrr_per_1000} MRR/1k emails`,
+      subLabel: c.market,
+      color: c.closed_mrr_per_1000 > 200 ? "#0358F1" : "#94a3b8",
+    }));
 
   return (
     <div className="space-y-6 p-6 max-w-[1400px]">
@@ -113,6 +178,53 @@ export default function CampaignsPage() {
           source="Instantly Pending"
         />
       </BoardMetricRow>
+
+      {/* ── Section A: Outbound Conversion Funnel ── */}
+      <ChartFrame
+        title="Outbound Attribution Funnel"
+        question="Where does outbound volume leak before becoming revenue?"
+        source="Instantly → HubSpot → Stripe"
+        sourceStatus="seed"
+        footnote="Opened is estimated (delivered × avg open rate). Attribution chain pending live Instantly + HubSpot sync."
+      >
+        <ConversionFunnelChart steps={funnelSteps} />
+      </ChartFrame>
+
+      {/* ── Section B: Campaign Engagement Comparison ── */}
+      <ChartFrame
+        title="Campaign Engagement Comparison"
+        question="Which campaign has the best reply and meeting efficiency?"
+        source="Instantly"
+        sourceStatus="seed"
+      >
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart
+            data={campaignComparisonData}
+            layout="vertical"
+            margin={{ top: 4, right: 24, bottom: 4, left: 0 }}
+          >
+            <XAxis type="number" {...axisStyle} tickFormatter={v => `${v}%`} />
+            <YAxis type="category" dataKey="name" width={140} {...axisStyle} />
+            <Tooltip
+              {...tooltipStyle}
+              formatter={(v: unknown) => [`${v}%`, ""]}
+            />
+            <Bar dataKey="open" name="Open Rate" fill="#e2e8f0" barSize={8} radius={[0, 3, 3, 0]} />
+            <Bar dataKey="reply" name="Reply Rate" fill="#94a3b8" barSize={8} radius={[0, 3, 3, 0]} />
+            <Bar dataKey="positive" name="Positive Reply Rate" fill="#0358F1" barSize={8} radius={[0, 3, 3, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
+
+      {/* ── Section C: MRR per 1000 Emails ── */}
+      <ChartFrame
+        title="Campaign Revenue Efficiency"
+        question="Which campaign generates the most MRR per 1,000 emails sent?"
+        source="Derived"
+        sourceStatus="derived"
+      >
+        <SegmentedProgressBars items={efficiencyItems} />
+      </ChartFrame>
 
       {/* 3. Funnel Leakage Table */}
       <ExecutiveSection

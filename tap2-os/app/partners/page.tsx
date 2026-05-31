@@ -1,12 +1,17 @@
 "use client";
 
 import { calcPartnerPerformance } from "@/lib/operating-model/calculations";
+import { ALL_DEALS } from "@/lib/operating-model/seed";
 import { OperatingBrief } from "@/components/operating/OperatingBrief";
 import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
 import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
 import { BridgeChart } from "@/components/analytics/BridgeChart";
 import { OperatingInsight } from "@/components/analytics/OperatingInsight";
 import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { ScatterQuadrantChart } from "@/components/charts/ScatterQuadrantChart";
+import { HorizontalBarRankChart } from "@/components/charts/HorizontalBarRankChart";
+import { HeatmapGrid } from "@/components/charts/HeatmapGrid";
 import type { PartnerPerformance } from "@/lib/operating-model/types";
 
 const GRADE_STYLE: Record<string, string> = {
@@ -28,6 +33,33 @@ function verdictColor(v: string): string {
   if (v === "Scale")   return "text-emerald-700";
   if (v === "Develop") return "text-blue-700";
   return "text-amber-700";
+}
+
+// Build heatmap cells: partner × stage deal counts
+function buildHeatmapData(partners: PartnerPerformance[]) {
+  const KEY_STAGES = ["Meeting Booked", "Demo Completed", "Proposal Sent", "Trial / Pilot", "Negotiation"];
+  const COL_LABELS = ["Meeting Booked", "Demo", "Proposal", "Trial", "Negotiation"];
+
+  // top 6 partners by total deals
+  const topPartners = [...partners]
+    .sort((a, b) => (b.leads_owned + b.closed_won) - (a.leads_owned + a.closed_won))
+    .slice(0, 6)
+    .map(p => p.name);
+
+  const activeDeals = ALL_DEALS.filter(d =>
+    d.deal_stage !== "Closed Won" && d.deal_stage !== "Closed Lost"
+  );
+
+  const cells = topPartners.flatMap(partnerName =>
+    KEY_STAGES.map((stage, si) => {
+      const count = activeDeals.filter(
+        d => d.owner === partnerName && d.deal_stage === stage
+      ).length;
+      return { row: partnerName, col: COL_LABELS[si], value: count };
+    })
+  );
+
+  return { cells, rows: topPartners, cols: COL_LABELS };
 }
 
 export default function PartnersPage() {
@@ -57,6 +89,26 @@ export default function PartnersPage() {
   ];
 
   const stalePartners = partners.filter(p => p.stale_deals > 0);
+
+  // Scatter data
+  const scatterData = partners.map(p => ({
+    name: p.name,
+    x: p.activity_score,
+    y: p.revenue_impact_score,
+    color: p.grade === "A" ? "#0358F1" : p.grade === "B" ? "#3b82f6" : p.grade === "C" ? "#f59e0b" : "#ef4444",
+  }));
+
+  // Bar chart data — closed MRR by partner
+  const partnerMRRData = [...partners]
+    .sort((a, b) => b.closed_mrr - a.closed_mrr)
+    .map(p => ({
+      label: p.name,
+      value: p.closed_mrr,
+      formatted: `€${p.closed_mrr}/mo`,
+    }));
+
+  // Heatmap
+  const { cells: heatmapCells, rows: heatmapRows, cols: heatmapCols } = buildHeatmapData(partners);
 
   return (
     <div className="space-y-6 p-6 max-w-[1400px]">
@@ -101,6 +153,41 @@ export default function PartnersPage() {
           flag={staleCount > 3 ? "Needs Attention" : undefined}
         />
       </BoardMetricRow>
+
+      {/* ── Section A: Activity vs Revenue Impact Scatter ── */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartFrame
+          title="Activity vs Revenue Impact"
+          question="Who is generating activity but no revenue? Who is quietly winning deals?"
+          source="Derived from HubSpot"
+          sourceStatus="seed"
+          footnote="Bubble position = partner. Top-right = ideal. Partners in top-left have high activity but poor conversion — needs coaching."
+        >
+          <ScatterQuadrantChart
+            data={scatterData}
+            xLabel="Activity Score"
+            yLabel="Revenue Impact"
+            xFormatter={v => `${v}`}
+            yFormatter={v => `${v}`}
+            quadrantLabels={{ tl: "High Activity, Low Revenue", tr: "Top Performers", bl: "Inactive", br: "Efficient Closers" }}
+            height={260}
+          />
+        </ChartFrame>
+
+        {/* ── Section B: Closed MRR by Partner ── */}
+        <ChartFrame
+          title="Closed MRR by Partner"
+          question="Who has generated the most recurring revenue?"
+          source="HubSpot"
+          sourceStatus="seed"
+        >
+          <HorizontalBarRankChart
+            data={partnerMRRData}
+            valueFormatter={v => `€${v}`}
+            height={Math.max(120, partnerMRRData.length * 32 + 20)}
+          />
+        </ChartFrame>
+      </div>
 
       {/* 3. Partner Scorecard Table */}
       <ExecutiveSection
@@ -171,6 +258,23 @@ export default function PartnersPage() {
           </table>
         </div>
       </ExecutiveSection>
+
+      {/* ── Section C: Pipeline Quality Heatmap ── */}
+      <ChartFrame
+        title="Partner × Stage Health Matrix"
+        question="Where is pipeline stale by partner and stage?"
+        source="HubSpot"
+        sourceStatus="seed"
+        footnote="Cell intensity = deal count in that stage. High-intensity cells with stale deals (orange) require immediate follow-up."
+      >
+        <HeatmapGrid
+          cells={heatmapCells}
+          rows={heatmapRows}
+          cols={heatmapCols}
+          colorScale="amber"
+          cellSize={36}
+        />
+      </ChartFrame>
 
       {/* 4. Partner Revenue Bridge */}
       <ExecutiveSection

@@ -6,7 +6,10 @@ import { OperatingBrief } from "@/components/operating/OperatingBrief";
 import { BoardMetricCard, BoardMetricRow } from "@/components/analytics/BoardMetricCard";
 import { ExecutiveSection } from "@/components/analytics/ExecutiveSection";
 import { SourceOfTruthBadge } from "@/components/analytics/SourceOfTruthBadge";
-import { MultiScenarioAreaChart } from "@/components/charts/MultiScenarioAreaChart";
+import { ScenarioFanChart } from "@/components/charts/ScenarioFanChart";
+import { ChartFrame } from "@/components/charts/ChartFrame";
+import { WaterfallBridge } from "@/components/charts/WaterfallBridge";
+import { SegmentedProgressBars } from "@/components/charts/SegmentedProgressBars";
 
 export default function ForecastPage() {
   const scenarios  = calcForecastScenarios();
@@ -96,6 +99,38 @@ export default function ForecastPage() {
           flag={netBurn > 6000 ? "High Burn" : undefined}
         />
       </BoardMetricRow>
+
+      {/* 2b. Scenario Fan Chart */}
+      <ChartFrame
+        title="MRR Growth Scenarios — 24-Month Forecast"
+        question="Which scenario reaches €100k ARR and when?"
+        source="Operating Model (Seed)"
+        sourceStatus="seed"
+        footnote="Scenarios modelled from €1,400 MRR baseline. Bold blue = Expected scenario. Reference lines at €8,300 (€100k ARR) and €41,700 (€500k ARR)."
+      >
+        <ScenarioFanChart
+          data={expected.months.slice(0, 24).map((m, i) => ({
+            month: m.month,
+            Conservative: conservative.months[i].ending_mrr,
+            Expected: expected.months[i].ending_mrr,
+            Aggressive: aggressive.months[i].ending_mrr,
+            Investor: investor.months[i].ending_mrr,
+          }))}
+          scenarios={[
+            { key: "Conservative", label: "Conservative", color: "#878787", opacity: 0.05, dashed: true },
+            { key: "Expected",     label: "Expected",     color: "#0358F1", opacity: 0.10 },
+            { key: "Investor",     label: "Investor",     color: "#d97706", opacity: 0.05, dashed: true },
+            { key: "Aggressive",   label: "Aggressive",   color: "#10b981", opacity: 0.05, dashed: true },
+          ]}
+          height={280}
+          valueFormatter={(v) => `€${v.toLocaleString()}`}
+          referenceLines={[
+            { value: 8300,  label: "€100k ARR" },
+            { value: 41700, label: "€500k ARR" },
+          ]}
+          tickFormatter={(v) => v.split(" ")[0]}
+        />
+      </ChartFrame>
 
       {/* 3. Scenario Comparison Table */}
       <ExecutiveSection
@@ -204,17 +239,25 @@ export default function ForecastPage() {
         subtitle="All four scenarios overlaid — reference lines at €100k and €500k ARR"
         right={<SourceOfTruthBadge source="Operating Model (Derived)" status="derived" />}
       >
-        <div className="board-card p-4">
-          <MultiScenarioAreaChart
-            data={chartData}
-            scenarios={scenarioConfigs}
-            height={280}
-            referenceLines={[
-              { value: 8300,  label: "€100k ARR", color: "#0358F1" },
-              { value: 41700, label: "€500k ARR", color: "#16a34a" },
-            ]}
-          />
-        </div>
+        <ScenarioFanChart
+          data={expected.months.slice(0, 12).map((m, i) => ({
+            month: m.month,
+            Conservative: conservative.months[i].ending_mrr,
+            Expected: expected.months[i].ending_mrr,
+            Aggressive: aggressive.months[i].ending_mrr,
+            Investor: investor.months[i].ending_mrr,
+          }))}
+          scenarios={[
+            { key: "Conservative", label: "Conservative", color: "#878787" },
+            { key: "Expected",     label: "Expected",     color: "#0358F1" },
+            { key: "Investor",     label: "Investor",     color: "#d97706" },
+            { key: "Aggressive",   label: "Aggressive",   color: "#10b981" },
+          ]}
+          height={260}
+          valueFormatter={(v) => `€${v.toLocaleString()}`}
+          referenceLines={[{ value: 8300, label: "€100k ARR" }]}
+          tickFormatter={(v) => v.split(" ")[0]}
+        />
       </ExecutiveSection>
 
       {/* 6. Sensitivity Analysis Table */}
